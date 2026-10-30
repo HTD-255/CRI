@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.vscode/
+*.npz
+results_*.png
+
+# Nhánh RLS/AutoCar cũ
+exp*_summary.json
+run_all_experiments.py
+v2.1.0*.md

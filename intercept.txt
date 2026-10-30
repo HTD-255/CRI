@@ -1,0 +1,31 @@
+luồng chính (main.py)
+Thiết lập kịch bản, thông số xe, bộ điều khiển (NMPCSolver, PurePursuitController), bộ tính CRI, cơ chế hysteresis chuyển mode, tracker, sensor, animator.
+Vòng lặp bước thời gian: cập nhật target, đo/track, tạo điểm chặn (intercept), tính điều khiển (ưu tiên NMPC, fallback PP, hoặc NO_TRACK), cập nhật trạng thái xe động lực học, vẽ Pygame.
+Ghi lại lịch sử, in thống kê, vẽ và lưu biểu đồ/npz kết quả.
+động lực học và ràng buộc (vehicle_model.py)
+DynamicBicycleModel 6 trạng thái [X,Y,ψ,vx,vy,r]; discretization Euler.
+Tham số xe, giới hạn trạng thái/điều khiển (ax, delta) trong VehicleParams.
+wrap_to_pi tiện ích chuẩn hoá góc.
+bộ giải NMPC (NMPC.py)
+Bài toán PGD ngắn hạn (Np=8, Nc=2) với trọng số Q/R/S và ràng buộc hộp u_min/u_max, x_min/x_max.
+cost_function + gradient finite difference; project clip; armijo backtracking; trả u_opt và thông tin hội tụ.
+Pure Pursuit & fallback (pure_pursuit.py, fallback.py)
+PurePursuitController: tính steering delta_pp và gia tốc a_pp theo khoảng cách/heading; hàm compute_desired_speed thích nghi.
+SimpleFallbackController: bộ tỉ lệ đơn giản trên yaw error và sai lệch tốc độ.
+CRI & chuyển mode (cri.py, hysteresis.py)
+CRIComputer: 4 thành phần phi1–phi4 (optimality, feasibility, superiority so với fallback, smoothness), gộp trọng số thành chỉ số [0,1].
+HysteresisSwitcher: ngưỡng theta_on/theta_off + dwell-time tránh chattering, quyết định NMPC vs FALLBACK.
+mô phỏng mục tiêu & kịch bản (scenario.py)
+Sinh waypoint cho nhiều kịch bản lateral/crossing/slalom… bằng spline.
+TargetVehicle di chuyển dọc waypoint với tốc độ không đổi; trả yaw, vị trí mỗi bước.
+cảm biến & tracker (sensor.py, tracker.py, ukf.py)
+SimulatedSensor: đo vị trí/vận tốc/heading target có nhiễu, giới hạn tầm.
+SimpleTracker: UKF CVCH 4 trạng thái, gán đo NN theo khoảng cách Mahalanobis, logic tạo/xoá/confirm track.
+UKF: tạo sigma points, predict/update, quản lý tuổi, xác nhận track.
+đánh giá (metric.py)
+calculate_tracking_distance, calculate_proximity_time, calculate_pei (Performance Engagement Index) dựa trên khoảng cách, thời gian bám, hiệu quả quãng đường.
+hiển thị real‑time (animator.py)
+PygameAnimator: camera pan/zoom, lưới, waypoint, trail ego/target, heading, intercept marker, vòng tròn tầm sensor.
+Dashboard bên phải: mode, thời gian, 3 đồ thị nhỏ (distance, speed, CRI), thống kê mode, thông tin tức thời, trợ giúp phím; hỗ trợ pause, zoom, fps.
+kiểm tra Pygame (test.py)
+Cửa sổ đơn giản xác nhận Pygame render & phím ESC thoát.
