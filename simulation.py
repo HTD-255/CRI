@@ -88,7 +88,8 @@ def run_simulation(config=None, on_step=None):
 
     keys = ['time', 'ego_state', 'target_pos', 'target_yaw', 'distance',
             'mode', 'cri', 'u_applied', 'u_nmpc', 'u_pp', 'exit_flag',
-            'grad_norm', 'solver_error', 'lat_accel_kin']
+            'grad_norm', 'solver_error', 'lat_accel_kin', 'lat_accel_dyn',
+            'tire_util']
     log = {k: [] for k in keys}
     counts = {'NMPC': 0, 'PP_FALLBACK': 0, 'NO_TRACK': 0}
     proximity_time = None
@@ -182,6 +183,8 @@ def run_simulation(config=None, on_step=None):
         log['solver_error'].append(solver_error)
         # Kinematic estimate only; not a tyre-force based acceleration.
         log['lat_accel_kin'].append(abs(speed ** 2 * np.tan(u[1]) / params.L))
+        log['lat_accel_dyn'].append(abs(model.lateral_accel(x, u)))
+        log['tire_util'].append(model.tire_utilization(x, u))
 
         # Advance ego and target together to t_{k+1}
         x = model.step(x, u)

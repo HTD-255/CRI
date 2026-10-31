@@ -19,6 +19,12 @@ class VehicleParams:
         self.Cr = 33000.0     # Độ cứng lốp sau (N/rad)
         self.Ts = 0.1         # Chu kỳ lấy mẫu (s)
 
+        # Mô hình lốp: 'saturated' (giới hạn vòng tròn ma sát) hoặc 'linear'
+        self.tire_model = 'saturated'
+        self.mu = 0.8         # Hệ số bám đường khô (nhựa đường)
+        self.g = 9.81         # Gia tốc trọng trường (m/s^2)
+        self.long_grip_frac = 0.9  # Lực dọc tối đa theo tỷ lệ mu*Fz (chừa lực ngang)
+
         # Ràng buộc điều khiển
         self.ax_min = -5.0
         self.ax_max = 8.0
@@ -73,22 +79,69 @@ class DynamicBicycleModel:
     def __init__(self, params=None):
         self.params = params if params else VehicleParams()
 
-    def tire_forces(self, vx, vy, r, delta):
-        """Tính lực ngang lốp"""
+    def effective_ax(self, ax):
+        """Gia tốc dọc thực tế: không vượt quá khả năng bám dọc cho phép"""
         p = self.params
+        if p.tire_model == 'linear':
+            return ax
+        lim = p.long_grip_frac * p.mu * p.g
+        return float(np.clip(ax, -lim, lim))
 
+    def axle_force_limits(self, ax):
+        """
+        Lực ngang tối đa mỗi trục theo vòng tròn ma sát.
+        Tải trọng tĩnh theo phân bố khối lượng; lực dọc chia theo tải trọng
+        trục nên mỗi trục dùng cùng tỷ lệ bám cho lực dọc.
+        """
+        p = self.params
+        Fzf = p.m * p.g * p.lr / p.L
+        Fzr = p.m * p.g * p.lf / p.L
+        a = self.effective_ax(ax)
+        scale = np.sqrt(max(p.mu ** 2 - (a / p.g) ** 2, 0.0))
+        return max(Fzf * scale, 1.0), max(Fzr * scale, 1.0)
+
+    def slip_angles(self, vx, vy, r, delta):
+        p = self.params
         # Tránh chia cho 0
         vx_safe = max(abs(vx), 0.5) * np.sign(max(vx, 0.5))
-
-        # Góc trượt
         alpha_f = delta - np.arctan2(vy + p.lf * r, vx_safe)
         alpha_r = -np.arctan2(vy - p.lr * r, vx_safe)
+        return alpha_f, alpha_r
 
-        # Lực ngang (mô hình tuyến tính)
-        Fyf = p.Cf * alpha_f
-        Fyr = p.Cr * alpha_r
+    def tire_forces(self, vx, vy, r, delta, ax=0.0):
+        """
+        Lực ngang lốp. Chế độ 'saturated' dùng tanh: độ dốc tại gốc bằng
+        độ cứng Cf/Cr và bão hòa tại giới hạn vòng tròn ma sát.
+        """
+        p = self.params
+        alpha_f, alpha_r = self.slip_angles(vx, vy, r, delta)
 
+        if p.tire_model == 'linear':
+            return p.Cf * alpha_f, p.Cr * alpha_r
+
+        Ff_max, Fr_max = self.axle_force_limits(ax)
+        Fyf = Ff_max * np.tanh(p.Cf * alpha_f / Ff_max)
+        Fyr = Fr_max * np.tanh(p.Cr * alpha_r / Fr_max)
         return Fyf, Fyr
+
+    def tire_utilization(self, x, u):
+        """
+        Mức sử dụng độ bám: max theo trục của |lực tuyến tính yêu cầu| /
+        lực ngang tối đa. > 1 nghĩa là lốp đã bão hòa (lệnh vượt khả năng).
+        """
+        p = self.params
+        _, _, _, vx, vy, r = x
+        ax, delta = u
+        alpha_f, alpha_r = self.slip_angles(vx, vy, r, delta)
+        Ff_max, Fr_max = self.axle_force_limits(ax)
+        return max(abs(p.Cf * alpha_f) / Ff_max, abs(p.Cr * alpha_r) / Fr_max)
+
+    def lateral_accel(self, x, u):
+        """Gia tốc ngang thân xe tính từ lực lốp (m/s^2)"""
+        _, _, _, vx, vy, r = x
+        ax, delta = u
+        Fyf, Fyr = self.tire_forces(vx, vy, r, delta, ax)
+        return (Fyf * np.cos(delta) + Fyr) / self.params.m
 
     def continuous_dynamics(self, x, u):
         """
@@ -106,7 +159,8 @@ class DynamicBicycleModel:
         p = self.params
 
         # Lực lốp
-        Fyf, Fyr = self.tire_forces(vx, vy, r, delta)
+        Fyf, Fyr = self.tire_forces(vx, vy, r, delta, ax)
+        ax = self.effective_ax(ax)
 
         # 6 phương trình
         dX = vx * np.cos(psi) - vy * np.sin(psi)
