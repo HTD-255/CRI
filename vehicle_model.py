@@ -25,6 +25,19 @@ class VehicleParams:
         self.g = 9.81         # Gia tốc trọng trường (m/s^2)
         self.long_grip_frac = 0.9  # Lực dọc tối đa theo tỷ lệ mu*Fz (chừa lực ngang)
 
+        # Magic Formula 6.1 (lực ngang thuần), tham khảo example.tir của
+        # JyNing04/Pacejka-tire-model (Apache-2.0); chỉ dùng khi tire_model='pacejka'
+        self.h_cg = 0.55           # Độ cao trọng tâm (m), giả định cho sedan
+        self.Fz0_tire = self.m * self.g / 4.0   # Tải danh định mỗi lốp (N)
+        self.PCY1 = 2.0            # Hệ số hình dạng C (giá trị của example.tir)
+        self.PDY1_ratio = 1.0      # Đỉnh ma sát = PDY1_ratio * mu
+        self.PDY2 = -0.05          # Giảm ma sát theo tải
+        self.PEY1 = -0.8           # Độ cong E tại tải danh định
+        self.PEY2 = -0.6           # Độ cong E theo tải
+        self.PEY3 = 0.1            # Bất đối xứng E theo dấu góc trượt
+        self.PKY2 = 2.0            # Tải tại đó độ cứng đạt cực đại (theo Fz0)
+        self.PKY4 = 2.0            # Độ cong độ cứng theo tải
+
         # Ràng buộc điều khiển
         self.ax_min = -5.0
         self.ax_max = 8.0
@@ -119,10 +132,58 @@ class DynamicBicycleModel:
         if p.tire_model == 'linear':
             return p.Cf * alpha_f, p.Cr * alpha_r
 
+        if p.tire_model == 'pacejka':
+            Fzf, Fzr = self.axle_loads(ax)
+            Fzf0 = p.m * p.g * p.lr / p.L
+            Fzr0 = p.m * p.g * p.lf / p.L
+            scale = self.friction_circle_scale(ax)
+            return (self._mf_axle(alpha_f, Fzf, Fzf0, p.Cf, scale),
+                    self._mf_axle(alpha_r, Fzr, Fzr0, p.Cr, scale))
+
         Ff_max, Fr_max = self.axle_force_limits(ax)
         Fyf = Ff_max * np.tanh(p.Cf * alpha_f / Ff_max)
         Fyr = Fr_max * np.tanh(p.Cr * alpha_r / Fr_max)
         return Fyf, Fyr
+
+    def friction_circle_scale(self, ax):
+        p = self.params
+        a = self.effective_ax(ax)
+        return np.sqrt(max(p.mu ** 2 - (a / p.g) ** 2, 0.0)) / p.mu
+
+    def axle_loads(self, ax):
+        """Tải trục: tĩnh + chuyển tải dọc do gia tốc (chỉ chế độ pacejka)"""
+        p = self.params
+        Fzf = p.m * p.g * p.lr / p.L
+        Fzr = p.m * p.g * p.lf / p.L
+        if p.tire_model == 'pacejka':
+            dF = p.m * self.effective_ax(ax) * p.h_cg / p.L
+            Fzf, Fzr = Fzf - dF, Fzr + dF
+        return max(Fzf, 1.0), max(Fzr, 1.0)
+
+    def _mf_stiffness(self, Fz_tire):
+        """Độ cứng góc trượt theo tải (dạng MF 6.1: sin(PKY4*atan(Fz/(PKY2*Fz0))))"""
+        p = self.params
+        return np.sin(p.PKY4 * np.arctan(Fz_tire / (p.PKY2 * p.Fz0_tire)))
+
+    def _mf_axle(self, alpha, Fz_axle, Fz_axle_static, C_axle, scale):
+        """
+        Magic Formula lực ngang thuần (MF 6.1, không camber/áp suất) cho một
+        trục gồm 2 lốp. Độ cứng ở tải tĩnh được chuẩn hóa về Cf/Cr để khớp mô
+        hình dự đoán ở vùng góc trượt nhỏ; hình dạng đỉnh/bão hòa theo MF.
+        """
+        p = self.params
+        Fz = Fz_axle / 2.0
+        dfz = (Fz - p.Fz0_tire) / p.Fz0_tire
+        mu = (p.PDY1_ratio * p.mu + p.PDY2 * dfz) * scale
+        D = max(mu * Fz, 1e-3)
+        Fz_static = Fz_axle_static / 2.0
+        K_static = C_axle / 2.0
+        K = K_static * self._mf_stiffness(Fz) / self._mf_stiffness(Fz_static)
+        Cy = p.PCY1
+        By = K / (Cy * D)
+        Ey = min((p.PEY1 + p.PEY2 * dfz) * (1.0 - p.PEY3 * np.sign(alpha)), 1.0)
+        x = By * alpha
+        return 2.0 * D * np.sin(Cy * np.arctan(x - Ey * (x - np.arctan(x))))
 
     def tire_utilization(self, x, u):
         """

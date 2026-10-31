@@ -59,3 +59,34 @@ def test_utilization_flags_saturation():
     x = np.array([0, 0, 0, 25.0, 0, 0])
     assert m.tire_utilization(x, [0.0, 0.01]) < 1.0
     assert m.tire_utilization(x, [0.0, 0.45]) > 1.0
+
+
+def test_pacejka_matches_linear_at_small_slip():
+    pj, lin = make('pacejka'), make('linear')
+    assert np.allclose(pj.tire_forces(15.0, 0, 0, 0.002),
+                       lin.tire_forces(15.0, 0, 0, 0.002), rtol=1e-2)
+
+
+def test_pacejka_peak_below_friction_limit_and_finite():
+    pj = make('pacejka')
+    for ax in (-5.0, 0.0, 8.0):
+        Fzf, _ = pj.axle_loads(ax)
+        for d in np.linspace(-0.45, 0.45, 41):
+            Fyf, Fyr = pj.tire_forces(20.0, 0.0, 0.0, d, ax)
+            assert np.isfinite(Fyf) and np.isfinite(Fyr)
+            assert abs(Fyf) <= 1.05 * pj.params.mu * Fzf
+
+
+def test_pacejka_longitudinal_load_transfer():
+    pj = make('pacejka')
+    f_brake, r_brake = pj.axle_loads(-5.0)
+    f_acc, r_acc = pj.axle_loads(5.0)
+    assert f_brake > f_acc and r_brake < r_acc
+    assert abs((f_brake + r_brake) - (f_acc + r_acc)) < 1e-6
+
+
+def test_pacejka_odd_symmetry_roughly():
+    pj = make('pacejka')
+    fp = pj.tire_forces(20.0, 0, 0, 0.1)[0]
+    fn = pj.tire_forces(20.0, 0, 0, -0.1)[0]
+    assert fp > 0 > fn and abs(fp + fn) < 0.1 * abs(fp)

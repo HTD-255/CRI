@@ -42,6 +42,9 @@ class SimConfig:
     low_speed_accel_floor: float = None
     low_speed_threshold: float = 10.0
     stop_on_proximity: bool = False
+    # Tyre model of the simulated vehicle; None = same as the NMPC predictor.
+    # 'pacejka' gives a plant/model mismatch to test robustness.
+    plant_tire_model: str = None
 
 
 def finalize_command(u, params, low_speed_accel_floor=None,
@@ -75,7 +78,10 @@ def run_simulation(config=None, on_step=None):
                              sensor_offset=cfg.sensor_offset)
 
     params = VehicleParams()
-    model = DynamicBicycleModel(params)
+    plant_params = VehicleParams()
+    if cfg.plant_tire_model is not None:
+        plant_params.tire_model = cfg.plant_tire_model
+    model = DynamicBicycleModel(plant_params)
     solver = NMPCSolver(params)
     pp = PurePursuitController(L=params.L)
     cri_computer = CRIComputer(solver)

@@ -94,3 +94,34 @@ Lưu ý: gia tốc ngang trong số liệu cũ của bài báo (16–29 m/s²) �
 1. Thêm kiểm tra khả thi chung (gia tốc ngang, độ bám) dùng cho NMPC, PP và CRI.
 2. Đưa tín hiệu bão hòa vào thiết kế CRI mới.
 3. Chạy lại baseline với nhiều seed/kịch bản bằng plant mới, đặt kết quả cạnh bản tuyến tính để trả lời phản biện số 2.
+
+## 9. Mô hình Magic Formula (Pacejka) cho plant mô phỏng
+
+Tham khảo repo JyNing04/Pacejka-tire-model (giấy phép Apache-2.0; dạng MF 6.1, tệp tham số `example.tir`). Tôi **không sao chép mã**, mà cài lại phần lực ngang thuần theo các phương trình MF 6.1 chuẩn, nằm trong [vehicle_model.py](./vehicle_model.py), chọn bằng `tire_model = 'pacejka'`.
+
+**Cách dùng đề xuất (phương án 2):** NMPC dự đoán bằng lốp bão hòa (tanh), còn xe mô phỏng dùng Pacejka qua `SimConfig.plant_tire_model = 'pacejka'`. Sai lệch mô hình này đóng vai trò thử độ bền cho CRI.
+
+**Có trong mô hình:**
+- Hình dạng đường cong Magic Formula (hệ số hình dạng, độ cong theo tải và theo dấu góc trượt, đỉnh ma sát giảm khi tải tăng).
+- Độ cứng góc trượt phụ thuộc tải lốp.
+- Chuyển tải dọc khi tăng/giảm tốc (cần độ cao trọng tâm `h_cg`): phanh làm trục trước nặng hơn nên lực ngang tối đa trục trước tăng, và ngược lại.
+- Vòng tròn ma sát: lực dọc đang dùng làm giảm đỉnh lực ngang.
+- Độ cứng ở tải tĩnh được chuẩn hóa về Cf, Cr hiện có, nên ở góc trượt nhỏ khớp mô hình dự đoán.
+
+**Chưa có (nói rõ để tránh nhận định quá mức):**
+- Không có chuyển tải ngang, camber, áp suất, ghép trượt dọc chi tiết, độ trễ lốp (relaxation length).
+- Mô hình vẫn là bicycle, hai lốp mỗi trục gộp làm một.
+- `example.tir` của repo là bộ tham số **mẫu**, không phải đo từ một loại lốp xe cụ thể. Các hệ số hình dạng (C, E, độ giảm ma sát theo tải, đường cong độ cứng) lấy từ đó; đỉnh ma sát lấy từ hệ số bám `mu` của chúng ta. Cho nên mô hình "gần thực tế hơn" nhưng **chưa được hiệu chuẩn theo lốp thật**. Muốn tuyên bố thực tế, cần file `.tir` của lốp cụ thể (nhà sản xuất hoặc bộ dữ liệu công khai) hoặc dữ liệu đo.
+- Độ cứng Cf = 19000 và Cr = 33000 N/rad mỗi trục khá mềm so với sedan thật (thường lớn hơn nhiều). Nên rà lại các giá trị này cùng lúc.
+
+**Kết quả sơ bộ (một kịch bản, một seed, chưa có ý nghĩa thống kê):** cùng NMPC dự đoán bằng lốp bão hòa, đổi lốp của xe mô phỏng:
+
+| Lốp của xe mô phỏng | NMPC / PP / mất bám | Khoảng cách tối thiểu | Gia tốc ngang lớn nhất |
+|---|---|---|---|
+| Bão hòa (khớp mô hình dự đoán) | 21 / 20 / 115 | 0.89 m | 6.02 m/s² |
+| Tuyến tính | 23 / 28 / 105 | 3.55 m | 11.58 m/s² |
+| Pacejka | 27 / 27 / 102 | 9.06 m | 6.36 m/s² |
+
+Chỉ riêng việc đổi mô hình lốp đã làm khoảng cách tối thiểu dao động từ 0.89 m đến 9.06 m. Đây là dấu hiệu rằng kết quả rất nhạy với mô hình lốp và với sai lệch giữa mô hình dự đoán và xe thật, nên các kết luận của bài báo cần chạy nhiều seed/kịch bản và ghi rõ giả định.
+
+**Kiểm chứng:** thêm 4 test Pacejka trong [test_tire.py](./test_tire.py) (khớp tuyến tính ở góc trượt nhỏ, lực hữu hạn và không vượt giới hạn ma sát, chuyển tải dọc bảo toàn tổng tải, đối xứng gần đúng). Tổng 17 test pass.
