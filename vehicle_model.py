@@ -8,15 +8,34 @@ import numpy as np
 
 
 class VehicleParams:
-    """Tham số xe"""
+    """Tham số xe
+
+    Nguồn tham số:
+        - m, Iz: gần khớp với ví dụ sedan tham chiếu trong Rajesh Rajamani,
+          "Vehicle Dynamics and Control" (Springer, 2012), chương 3,
+          trong đó m=1573 kg, Iz=2873 kg*m^2 được mô tả là đại diện cho
+          một sedan hành khách. lf, lr và Cf, Cr KHÔNG khớp với giá trị
+          tương ứng của nguồn này (Rajamani dùng lf=1.1, lr=1.58,
+          Cf=Cr=80000 N/rad) nên không được coi là đã có cùng nguồn gốc;
+          cần rà soát/hiệu chỉnh lại Cf, Cr trước khi dùng cho tuyên bố
+          định lượng.
+        - mu: đối chiếu khoảng giá trị với Michael Taylor, "Implementation
+          and Validation of the Fiala Tire Model in Chrono", Technical
+          Report TR-2015-13 (2015), dùng Umin=0.9/Umax=1.0 khi kiểm định
+          mô hình Fiala; đây là giá trị minh họa cho kiểm định mô hình,
+          không phải hệ số ma sát đo cho lốp/mặt đường cụ thể của xe
+          đang mô phỏng.
+    """
     def __init__(self):
         self.m = 1575.0       # Khối lượng (kg)
         self.L = 2.5          # Wheelbase (m)
         self.lf = 1.2         # Trọng tâm -> trục trước (m)
         self.lr = 1.3         # Trọng tâm -> trục sau (m)
         self.Iz = 2875.0      # Mô-men quán tính yaw (kg*m^2)
-        self.Cf = 19000.0     # Độ cứng lốp trước (N/rad)
-        self.Cr = 33000.0     # Độ cứng lốp sau (N/rad)
+        self.Cf = 19000.0     # Độ cứng góc trượt cầu trước (N/rad) - giả định, cần rà soát
+        self.Cr = 33000.0     # Độ cứng góc trượt cầu sau (N/rad) - giả định, cần rà soát
+        self.mu = 0.9         # Hệ số ma sát lốp-mặt đường (giả định minh họa, xem Taylor 2015)
+        self.g = 9.81         # Gia tốc trọng trường (m/s^2)
         self.Ts = 0.1         # Chu kỳ lấy mẫu (s)
 
         # Ràng buộc điều khiển
@@ -73,8 +92,31 @@ class DynamicBicycleModel:
     def __init__(self, params=None):
         self.params = params if params else VehicleParams()
 
+    @staticmethod
+    def _fiala_lateral_force(alpha, cornering_stiffness, normal_load,
+                             friction_coefficient):
+        """Tính lực ngang Fiala cho một cầu, với alpha dương tạo lực dương."""
+        if cornering_stiffness <= 0 or normal_load <= 0:
+            raise ValueError("cornering stiffness and normal load must be positive")
+        if friction_coefficient <= 0:
+            raise ValueError("friction coefficient must be positive")
+
+        tan_alpha = np.tan(alpha)
+        mu_fz = friction_coefficient * normal_load
+        saturation_angle = 3.0 * mu_fz / cornering_stiffness
+        if abs(tan_alpha) >= saturation_angle:
+            return mu_fz * np.sign(tan_alpha)
+
+        return (
+            cornering_stiffness * tan_alpha
+            - cornering_stiffness**2 / (3.0 * mu_fz)
+            * abs(tan_alpha) * tan_alpha
+            + cornering_stiffness**3 / (27.0 * mu_fz**2)
+            * tan_alpha**3
+        )
+
     def tire_forces(self, vx, vy, r, delta):
-        """Tính lực ngang lốp"""
+        """Tính lực ngang Fiala tại cầu trước và cầu sau."""
         p = self.params
 
         # Tránh chia cho 0
@@ -84,9 +126,11 @@ class DynamicBicycleModel:
         alpha_f = delta - np.arctan2(vy + p.lf * r, vx_safe)
         alpha_r = -np.arctan2(vy - p.lr * r, vx_safe)
 
-        # Lực ngang (mô hình tuyến tính)
-        Fyf = p.Cf * alpha_f
-        Fyr = p.Cr * alpha_r
+        # Tải pháp tuyến tĩnh theo phân bố trọng lượng trước/sau.
+        Fzf = p.m * p.g * p.lr / p.L
+        Fzr = p.m * p.g * p.lf / p.L
+        Fyf = self._fiala_lateral_force(alpha_f, p.Cf, Fzf, p.mu)
+        Fyr = self._fiala_lateral_force(alpha_r, p.Cr, Fzr, p.mu)
 
         return Fyf, Fyr
 

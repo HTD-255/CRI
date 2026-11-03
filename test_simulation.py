@@ -55,3 +55,27 @@ def test_finalize_floor_then_clip():
     assert u[0] == 4.0
     u = finalize_command(np.array([100.0, 9.0]), p, None, 20.0, 10.0)
     assert np.allclose(u, p.u_max)
+
+
+def test_fiala_zero_slip_produces_zero_force():
+    model = DynamicBicycleModel()
+    assert model.tire_forces(10.0, 0.0, 0.0, 0.0) == (0.0, 0.0)
+
+
+def test_fiala_matches_cornering_stiffness_at_small_slip():
+    model = DynamicBicycleModel()
+    alpha = 1e-6
+    force, _ = model.tire_forces(10.0, 0.0, 0.0, alpha)
+    assert force / alpha == pytest.approx(model.params.Cf, rel=1e-5)
+
+
+def test_fiala_force_is_odd_and_saturates_at_friction_limit():
+    model = DynamicBicycleModel()
+    p = model.params
+    front_normal_load = p.m * p.g * p.lr / p.L
+    positive_force, _ = model.tire_forces(10.0, 0.0, 0.0, 1.3)
+    negative_force, _ = model.tire_forces(10.0, 0.0, 0.0, -1.3)
+    friction_limit = p.mu * front_normal_load
+
+    assert positive_force == pytest.approx(friction_limit)
+    assert negative_force == pytest.approx(-friction_limit)

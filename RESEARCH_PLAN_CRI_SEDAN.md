@@ -14,7 +14,7 @@ Nghiên cứu đề xuất thiết kế lại cơ chế chuyển đổi giữa N
 
 CRI là thành phần điều phối chính, không phải một chỉ số chỉ để ghi log. Mỗi chu kỳ, hệ thống tính ứng viên NMPC và ứng viên PP; CRI so sánh chất lượng dự kiến của hai ứng viên, sau đó hysteresis/dwell-time quyết định mode đang hoạt động. Cổng kiểm tra solver và feasibility là lớp ràng buộc cứng bổ trợ: nó không thay CRI trong các quyết định bình thường, nhưng có thể từ chối ứng viên không hợp lệ. Sai số giữa trạng thái dự đoán và trạng thái quan sát ở bước kế tiếp được đưa vào đánh giá CRI ở các chu kỳ sau.
 
-Song song, mô hình sedan và cách tính gia tốc được rà soát để bảo đảm các kết quả có ý nghĩa vật lý. Code hiện dùng mô hình động lực học bicycle phi tuyến cho mô phỏng và dự đoán NMPC. Điểm cần thẩm định là luật lực lốp tuyến tính theo góc trượt và việc chưa có bão hòa/giới hạn lực lốp; không phải toàn bộ mô hình xe là tuyến tính. Nghiên cứu sẽ xác định liệu cần bổ sung mô hình lực lốp bão hòa hoặc dùng một plant tham chiếu chi tiết hơn để đánh giá sai số mô hình; không mặc định phải thay bằng mô hình bốn bánh.
+Song song, mô hình sedan và cách tính gia tốc được rà soát để bảo đảm các kết quả có ý nghĩa vật lý. Code hiện dùng mô hình động lực học bicycle phi tuyến với luật lực lốp Fiala cho mô phỏng và dự đoán NMPC. Luật Fiala bão hòa lực ngang theo tải pháp tuyến tĩnh và hệ số ma sát giả định; cần thẩm định miền hợp lệ, độ nhạy và sai số mô hình. Mô hình chưa áp dụng tải động hay giới hạn lực dọc-ngang kết hợp; không phải toàn bộ mô hình xe là tuyến tính và không mặc định phải thay bằng mô hình bốn bánh.
 
 ## 2. Bối cảnh và động lực
 
@@ -31,7 +31,7 @@ Vì vậy, nghiên cứu không chỉ điều chỉnh trọng số CRI. Cần x�
 - [`cri.py`](./cri.py): CRI hiện cộng bốn thành phần optimality, feasibility, superiority và smoothness theo trọng số cố định. Feasibility hiện tập trung vào giới hạn trạng thái/điều khiển dạng hộp; superiority dùng dự đoán giữ điều khiển không đổi.
 - [`hysteresis.py`](./hysteresis.py): đã có hai ngưỡng hysteresis và dwell theo số lần gọi `decide`, nhưng chưa có đánh giá dwell-time thực tế hoặc xử lý đầy đủ khi mất track.
 - [`NMPC.py`](./NMPC.py): solver hiện dùng projected gradient với phép chiếu lên ràng buộc hộp; chưa có xử lý trực tiếp các ràng buộc phi tuyến về lực lốp.
-- [`vehicle_model.py`](./vehicle_model.py): code đã có mô hình động lực học bicycle phi tuyến/single-track. Động lực học có các thành phần phi tuyến như lượng giác, arctan và tích trạng thái; tuy nhiên lực lốp được tính tuyến tính theo góc trượt, chưa có bão hòa lực hoặc giới hạn ma sát kết hợp.
+- [`vehicle_model.py`](./vehicle_model.py): code đã có mô hình động lực học bicycle phi tuyến/single-track. Động lực học có các thành phần phi tuyến như lượng giác, arctan và tích trạng thái; lực lốp dùng luật Fiala bão hòa theo tải pháp tuyến tĩnh, chưa có tải động hoặc giới hạn ma sát kết hợp.
 - [`main.py`](./main.py): mode quyết định chọn trực tiếp NMPC hoặc PP; chưa thấy blending. Lệnh gia tốc được hậu xử lý sau lựa chọn mode, vì vậy lệnh được CRI đánh giá có thể khác lệnh áp dụng.
 - [`main.py`](./main.py): gia tốc ngang được ghi bằng công thức động học dựa trên tốc độ, góc lái và chiều dài cơ sở; cần phân biệt nó với gia tốc ngang tính từ phương trình lực của mô hình.
 - [`metric.py`](./metric.py): đã có PEI, khoảng cách nhỏ nhất và proximity-time; chưa có nhãn đánh giá so sánh chất lượng closed-loop của hai mode NMPC và PP trong một cửa sổ tương lai.
@@ -89,9 +89,9 @@ Các giả thuyết trên là giả thuyết thực nghiệm; không được xe
 #### Chọn cấu trúc mô hình
 
 - **Mô hình hiện có:** giữ làm baseline là động lực học bicycle phi tuyến; mô tả đúng trạng thái, phương trình động lực học và luật lực lốp đang được triển khai.
-- **Vấn đề cần xử lý:** luật lực lốp hiện tuyến tính theo góc trượt và chưa bão hòa theo tải/ma sát. Cần xác định liệu bổ sung saturation/friction constraints vào mô hình hiện tại có đủ hay cần một plant tham chiếu chi tiết hơn để kiểm chứng.
+- **Vấn đề cần xử lý:** luật lực lốp Fiala bão hòa theo tải pháp tuyến tĩnh và hệ số ma sát giả định. Cần kiểm chứng miền hợp lệ, độ nhạy tham số và xem xét tải động/lực dọc kết hợp; mô hình này chưa phải friction circle/ellipse.
 - **Mô hình dự đoán NMPC:** nếu khác plant dùng đánh giá, định lượng sai số dự đoán và ảnh hưởng tới quyết định CRI; nếu dùng cùng mô hình, vẫn cần kiểm tra tính hợp lệ của tire model ở các trạng thái đã chạy.
-- Không gọi bicycle model là mô hình tuyến tính toàn xe. Cần phân biệt rõ “động lực học bicycle phi tuyến” với “quan hệ lực lốp tuyến tính theo góc trượt”.
+- Không gọi bicycle model là mô hình tuyến tính toàn xe. Cần phân biệt rõ “động lực học bicycle phi tuyến” với “luật lực lốp Fiala có bão hòa”.
 
 #### Nguồn tham số
 
@@ -103,9 +103,15 @@ Mỗi tham số phải được đánh dấu thuộc một trong các nhóm:
 
 Với tham số bất định, khai báo một miền hợp lý và dùng trong phân tích độ nhạy. Không chọn một giá trị chỉ vì nó tạo ra kết quả tốt.
 
+**Rà soát hiện trạng (sau khi chuyển sang luật lốp Fiala):**
+
+- `m=1575 kg` và `Iz=2875 kg*m^2` gần khớp với ví dụ sedan tham chiếu trong **Rajesh Rajamani**, *Vehicle Dynamics and Control* (Springer, 2012, chương 3), trong đó `m=1573 kg`, `Iz=2873 kg*m^2` được mô tả là đại diện cho một sedan hành khách. Có thể xếp hai tham số này vào nhóm (2).
+- `lf=1.2 m`, `lr=1.3 m`, `Cf=19000 N/rad`, `Cr=33000 N/rad` **không khớp** với giá trị tương ứng của cùng nguồn đó (**Rajamani**, `lf=1.1`, `lr=1.58`, `Cf=Cr=80000 N/rad`). Không được coi `Cf`/`Cr` hiện tại là đã có nguồn gốc cùng ví dụ với `m`/`Iz`. Cần làm một trong hai việc trước khi báo cáo: (a) tìm nguồn riêng hợp lý cho `lf`, `lr`, `Cf`, `Cr` và ghi rõ nguồn, hoặc (b) xếp các tham số này vào nhóm (3) giả định mô phỏng và chạy phân tích độ nhạy, không trình bày như giá trị đã được xác thực.
+- `mu=0.9` đối chiếu được với khoảng giá trị `Umin=0.9`/`Umax=1.0` dùng trong **Michael Taylor**, *Implementation and Validation of the Fiala Tire Model in Chrono*, Technical Report TR-2015-13 (2015), nhưng nguồn đó dùng giá trị này để kiểm định triển khai mô hình Fiala, không phải để mô tả một cặp lốp-mặt đường cụ thể. Xếp vào nhóm (3) giả định mô phỏng, có đối chiếu độ lớn với tài liệu.
+
 #### Lực lốp và gia tốc
 
-- Bổ sung hoặc lựa chọn mô hình lực lốp có bão hòa phù hợp với độ chi tiết của plant; đánh giá riêng thay đổi này so với luật lực lốp tuyến tính hiện tại.
+- Đánh giá riêng luật Fiala đã triển khai so với luật lực lốp tuyến tính trước đây; xác định độ nhạy theo độ cứng góc, tải pháp tuyến và hệ số ma sát.
 - Kiểm tra giới hạn lực kết hợp cho mỗi bánh bằng friction circle hoặc friction ellipse: tổng hợp lực dọc và lực ngang tại bánh không được vượt quá giới hạn ma sát khả dụng, được xác định từ hệ số ma sát và tải pháp tuyến của bánh.
 - Xác định cách tính tải pháp tuyến và hệ số ma sát từ mô hình/giả định; không đưa ràng buộc này vào bài như thể đã dùng nếu solver hoặc plant không thực thi nó.
 - Báo cáo riêng gia tốc ngang động học và gia tốc ngang từ phương trình động lực học. Với mô hình bicycle hiện tại, gia tốc ngang động lực học được tính bằng tổng của đạo hàm vận tốc ngang trong hệ thân xe và tích giữa vận tốc dọc với tốc độ yaw.
@@ -237,7 +243,7 @@ Mọi baseline phải dùng cùng plant, giới hạn vật lý, cách xử lý 
 - Không dwell-time.
 - Có/không có acceleration floor hiện tại.
 - Dùng CRI heuristic cũ so với CRI hiệu chuẩn mới.
-- So sánh luật lực lốp hiện tại với tire-force saturation/friction constraint hoặc plant tham chiếu chi tiết hơn, nếu triển khai được.
+- Đánh giá luật Fiala hiện tại và so sánh với mô hình tire-force/friction chi tiết hơn nếu cần làm plant tham chiếu.
 
 ### 8.4 Metric
 
@@ -290,7 +296,7 @@ Thay đổi có kiểm soát các nhóm bất định đã có căn cứ: tham s
 
 ### Giai đoạn B — Plant và tính khả thi
 
-- Xác nhận mô hình bicycle phi tuyến hiện tại; chốt mô hình lực lốp có bão hòa/giới hạn và phạm vi hợp lệ.
+- Xác nhận mô hình bicycle phi tuyến với luật lực lốp Fiala; đánh giá độ nhạy và chốt phạm vi hợp lệ.
 - Sửa cách tính/báo cáo gia tốc.
 - Xác định ràng buộc lốp và cách thực thi trong solver/plant.
 
@@ -358,7 +364,7 @@ Hãy thu thập các dữ liệu dưới đây và ghi nguồn, ngày truy cập
 - Tham số lốp: độ cứng hoặc dữ liệu đường cong lực-góc trượt, lực dọc/ngang cực đại, điều kiện tải và áp suất nếu nguồn cung cấp.
 - Tải trọng tĩnh từng cầu/bánh, mô hình chuyển tải khi tăng tốc/phanh/quay vòng, giả định hệ dẫn động và phân bố lực phanh.
 - Hệ số ma sát mặt đường, điều kiện mặt đường, và nguồn/biện minh cho miền biến thiên.
-- Miền hợp lệ của luật lốp tuyến tính hiện tại; tire-force saturation/friction model dự kiến và phương pháp kiểm tra nó.
+- Miền hợp lệ của luật lốp Fiala hiện tại (bão hòa theo tải pháp tuyến tĩnh và hệ số ma sát giả định); tire-force saturation/friction model đầy đủ hơn (ví dụ friction circle/ellipse, tải động) nếu cần, và phương pháp kiểm tra nó.
 - Nếu không có thông số thật: nguồn benchmark thay thế, các tham số giả định và phạm vi kết luận cho cấu hình mô phỏng.
 
 ### 13.3 Target và định nghĩa nhiệm vụ
@@ -409,3 +415,15 @@ Hãy thu thập các dữ liệu dưới đây và ghi nguồn, ngày truy cập
 ### 13.8 Bảng theo dõi nguồn tham số
 
 Tạo bảng làm việc với các cột: **Tên tham số | Giá trị/miền | Đơn vị | Nhóm (vật lý/thiết kế/đánh giá) | Nguồn hoặc quy trình chọn | Độ bất định | Nơi sử dụng trong code | Thí nghiệm độ nhạy**. Bảng này giúp phát hiện tham số nào còn tùy ý trước khi đóng băng cấu hình cuối.
+
+**Rà soát sơ bộ cho `vehicle_model.py` (luật lốp Fiala), dùng làm điểm khởi đầu khi điền bảng trên:**
+
+| Tham số | Giá trị hiện tại | Nhóm | Tác giả | Nguồn đối chiếu | Ghi chú/độ bất định |
+|---|---|---|---|---|---|
+| `m` | 1575 kg | (2) trích tài liệu | Rajesh Rajamani | Rajamani, *Vehicle Dynamics and Control*, Springer 2012, ch. 3 (`m=1573 kg`, mô tả "representative of parameters for a passenger sedan") | Gần khớp, chênh lệch không đáng kể; có thể trích dẫn trực tiếp. |
+| `Iz` | 2875 kg·m² | (2) trích tài liệu | Rajesh Rajamani | Cùng nguồn Rajamani (`Iz=2873 kg*m^2`) | Gần khớp, cùng nguồn với `m`. |
+| `lf`, `lr` | 1.2 m, 1.3 m | (3) giả định mô phỏng | Rajesh Rajamani (nguồn đối chiếu, không khớp) | Không khớp Rajamani (`lf=1.1`, `lr=1.58`) | Không nên trích cùng nguồn với `m`/`Iz`; cần nguồn riêng hoặc công bố là giả định + sensitivity theo `lf/lr`. |
+| `Cf`, `Cr` | 19000, 33000 N/rad | (3) giả định mô phỏng, cần rà soát | Rajesh Rajamani (nguồn đối chiếu, không khớp) | Thấp hơn 2.4–4 lần so với `Cf=Cr=80000 N/rad` của Rajamani cho cùng loại sedan | Điểm yếu nhất của bộ tham số hiện tại; ưu tiên tìm nguồn riêng (đo/hiệu chuẩn hoặc benchmark khác phù hợp quy ước "theo cầu") trước khi viết bài, hoặc chạy sensitivity rộng và nêu rõ giới hạn. |
+| `mu` | 0.9 | (3) giả định mô phỏng, đối chiếu độ lớn | Michael Taylor | Taylor, *Implementation and Validation of the Fiala Tire Model in Chrono*, Technical Report TR-2015-13 (2015): `Umin=0.9`, `Umax=1.0` dùng để kiểm định triển khai Fiala | Không phải giá trị đo cho một cặp lốp-mặt đường cụ thể; chỉ dùng được để nói "cùng khoảng giá trị với tài liệu kiểm định mô hình Fiala". |
+
+Khi viết lại phần methodology, nên trình bày tách bạch: `m`, `Iz` là tham số có đối chiếu tài liệu; `lf`, `lr`, `Cf`, `Cr` là giả định mô phỏng cần sensitivity; `mu` là giả định có đối chiếu độ lớn nhưng không phải giá trị đo thực địa. Tránh gộp chung cả bốn/năm tham số thành một câu "tham số lấy từ tài liệu tham khảo".
