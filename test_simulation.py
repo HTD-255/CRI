@@ -79,3 +79,39 @@ def test_fiala_force_is_odd_and_saturates_at_friction_limit():
 
     assert positive_force == pytest.approx(friction_limit)
     assert negative_force == pytest.approx(-friction_limit)
+
+
+def test_braking_shifts_normal_load_to_front_axle():
+    model = DynamicBicycleModel()
+    p = model.params
+    Fzf_static = p.m * p.g * p.lr / p.L
+    Fzr_static = p.m * p.g * p.lf / p.L
+
+    Fzf_brake, Fzr_brake = model.normal_loads(ax=-3.0)
+    Fzf_accel, Fzr_accel = model.normal_loads(ax=3.0)
+
+    assert Fzf_brake > Fzf_static > Fzf_accel
+    assert Fzr_accel > Fzr_static > Fzr_brake
+    # Tổng tải pháp tuyến không đổi (chỉ chuyển tải giữa hai cầu).
+    assert Fzf_brake + Fzr_brake == pytest.approx(Fzf_static + Fzr_static)
+    assert Fzf_accel + Fzr_accel == pytest.approx(Fzf_static + Fzr_static)
+
+
+def test_friction_ellipse_reduces_lateral_capacity_under_hard_braking():
+    model = DynamicBicycleModel()
+    p = model.params
+    ax_brake = -6.0
+
+    # Giới hạn ma sát "chỉ do Fz động" (bỏ qua lực dọc), dùng làm mốc so
+    # sánh để tách riêng hiệu ứng friction ellipse khỏi hiệu ứng chuyển
+    # tải pháp tuyến (cả hai đều xảy ra cùng lúc khi phanh).
+    Fzf_dyn, _ = model.normal_loads(ax_brake)
+    friction_limit_dynamic_load_only = p.mu * Fzf_dyn
+
+    # alpha đủ lớn để bão hòa lực ngang trong cả hai trường hợp.
+    force_hard_brake, _ = model.tire_forces(10.0, 0.0, 0.0, 1.3, ax=ax_brake)
+
+    # Khi phanh, một phần ma sát cầu trước bị dùng cho lực dọc nên lực
+    # ngang bão hòa thấp hơn giới hạn tính riêng từ Fz động (friction
+    # ellipse), dù Fz cầu trước đã tăng lên do chuyển tải khi phanh.
+    assert force_hard_brake < friction_limit_dynamic_load_only

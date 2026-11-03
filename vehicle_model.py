@@ -25,12 +25,19 @@ class VehicleParams:
           mô hình Fiala; đây là giá trị minh họa cho kiểm định mô hình,
           không phải hệ số ma sát đo cho lốp/mặt đường cụ thể của xe
           đang mô phỏng.
+        - h: chiều cao trọng tâm, dùng để tính chuyển tải dọc khi phanh/
+          tăng tốc (`normal_loads`). Giả định minh họa nằm trong khoảng
+          điển hình của sedan hành khách (~0.5-0.6 m) được nhắc tới
+          trong các tài liệu động lực học xe (ví dụ Rajamani 2012, ch.2
+          về load transfer); KHÔNG phải giá trị đo cho xe cụ thể, cần
+          nguồn riêng nếu dùng cho tuyên bố định lượng.
     """
     def __init__(self):
         self.m = 1575.0       # Khối lượng (kg)
         self.L = 2.5          # Wheelbase (m)
         self.lf = 1.2         # Trọng tâm -> trục trước (m)
         self.lr = 1.3         # Trọng tâm -> trục sau (m)
+        self.h = 0.55         # Chiều cao trọng tâm (m) - giả định minh họa, cần rà soát
         self.Iz = 2875.0      # Mô-men quán tính yaw (kg*m^2)
         self.Cf = 19000.0     # Độ cứng góc trượt cầu trước (N/rad) - giả định, cần rà soát
         self.Cr = 33000.0     # Độ cứng góc trượt cầu sau (N/rad) - giả định, cần rà soát
@@ -93,16 +100,21 @@ class DynamicBicycleModel:
         self.params = params if params else VehicleParams()
 
     @staticmethod
-    def _fiala_lateral_force(alpha, cornering_stiffness, normal_load,
-                             friction_coefficient):
-        """Tính lực ngang Fiala cho một cầu, với alpha dương tạo lực dương."""
-        if cornering_stiffness <= 0 or normal_load <= 0:
-            raise ValueError("cornering stiffness and normal load must be positive")
-        if friction_coefficient <= 0:
-            raise ValueError("friction coefficient must be positive")
+    def _fiala_lateral_force(alpha, cornering_stiffness, max_lateral_force):
+        """Tính lực ngang Fiala cho một cầu, với alpha dương tạo lực dương.
+
+        `max_lateral_force` là lực ngang bão hòa khả dụng của cầu đó
+        (mu*Fz sau khi đã trừ phần ma sát dùng cho lực dọc theo friction
+        ellipse, xem `_max_lateral_friction`).
+        """
+        if cornering_stiffness <= 0:
+            raise ValueError("cornering stiffness must be positive")
+        if max_lateral_force <= 0:
+            # Không còn ma sát khả dụng (ví dụ Fz=0 hoặc |Fx| đã dùng hết).
+            return 0.0
 
         tan_alpha = np.tan(alpha)
-        mu_fz = friction_coefficient * normal_load
+        mu_fz = max_lateral_force
         saturation_angle = 3.0 * mu_fz / cornering_stiffness
         if abs(tan_alpha) >= saturation_angle:
             return mu_fz * np.sign(tan_alpha)
@@ -115,8 +127,57 @@ class DynamicBicycleModel:
             * tan_alpha**3
         )
 
-    def tire_forces(self, vx, vy, r, delta):
-        """Tính lực ngang Fiala tại cầu trước và cầu sau."""
+    @staticmethod
+    def _max_lateral_friction(friction_coefficient, normal_load,
+                              longitudinal_force):
+        """Friction ellipse: lực ngang tối đa còn lại sau khi trừ phần ma
+        sát đã dùng cho lực dọc `longitudinal_force` tại cùng cầu.
+        """
+        if friction_coefficient <= 0 or normal_load <= 0:
+            return 0.0
+        max_total = friction_coefficient * normal_load
+        ratio = np.clip(longitudinal_force / max_total, -1.0, 1.0)
+        return max_total * np.sqrt(max(0.0, 1.0 - ratio**2))
+
+    def normal_loads(self, ax):
+        """Tải pháp tuyến động theo trục, có chuyển tải dọc do `ax`.
+
+        Quy ước: `ax > 0` (tăng tốc) chuyển tải về cầu sau; `ax < 0`
+        (phanh) chuyển tải về cầu trước. Công thức chuyển tải chuẩn:
+        `Fzf = Fzf_static - m*ax*h/L`, `Fzr = Fzr_static + m*ax*h/L`.
+        Tải pháp tuyến được chặn dưới ở 0 (không cho giá trị âm khi
+        chuyển tải vượt quá tải tĩnh, trường hợp phi thực tế ở gia tốc
+        rất lớn).
+        """
+        p = self.params
+        Fzf_static = p.m * p.g * p.lr / p.L
+        Fzr_static = p.m * p.g * p.lf / p.L
+        transfer = p.m * ax * p.h / p.L
+        Fzf = max(Fzf_static - transfer, 0.0)
+        Fzr = max(Fzr_static + transfer, 0.0)
+        return Fzf, Fzr
+
+    def _longitudinal_force_split(self, ax):
+        """Phân bổ lực dọc tổng (`m*ax`) cho hai cầu theo tỉ lệ tải tĩnh.
+
+        Đây là một giả định đơn giản hóa (không mô hình hệ dẫn động cụ
+        thể cầu trước/cầu sau/AWD); dùng để ước lượng mức sử dụng ma sát
+        dọc cho friction ellipse, cần rà soát lại nếu kịch bản có gia tốc
+        dọc lớn và cần độ chính xác cao hơn.
+        """
+        p = self.params
+        Fzf_static = p.m * p.g * p.lr / p.L
+        Fzr_static = p.m * p.g * p.lf / p.L
+        front_frac = Fzf_static / (Fzf_static + Fzr_static)
+        Fx_total = p.m * ax
+        return Fx_total * front_frac, Fx_total * (1.0 - front_frac)
+
+    def tire_forces(self, vx, vy, r, delta, ax=0.0):
+        """Tính lực ngang Fiala tại cầu trước và cầu sau.
+
+        `ax` (mặc định 0) dùng để tính tải pháp tuyến động (chuyển tải
+        dọc) và giới hạn ma sát theo friction ellipse kết hợp lực dọc.
+        """
         p = self.params
 
         # Tránh chia cho 0
@@ -126,11 +187,14 @@ class DynamicBicycleModel:
         alpha_f = delta - np.arctan2(vy + p.lf * r, vx_safe)
         alpha_r = -np.arctan2(vy - p.lr * r, vx_safe)
 
-        # Tải pháp tuyến tĩnh theo phân bố trọng lượng trước/sau.
-        Fzf = p.m * p.g * p.lr / p.L
-        Fzr = p.m * p.g * p.lf / p.L
-        Fyf = self._fiala_lateral_force(alpha_f, p.Cf, Fzf, p.mu)
-        Fyr = self._fiala_lateral_force(alpha_r, p.Cr, Fzr, p.mu)
+        # Tải pháp tuyến động (có chuyển tải dọc) và friction ellipse.
+        Fzf, Fzr = self.normal_loads(ax)
+        Fxf, Fxr = self._longitudinal_force_split(ax)
+        max_Fyf = self._max_lateral_friction(p.mu, Fzf, Fxf)
+        max_Fyr = self._max_lateral_friction(p.mu, Fzr, Fxr)
+
+        Fyf = self._fiala_lateral_force(alpha_f, p.Cf, max_Fyf)
+        Fyr = self._fiala_lateral_force(alpha_r, p.Cr, max_Fyr)
 
         return Fyf, Fyr
 
@@ -149,8 +213,8 @@ class DynamicBicycleModel:
         ax, delta = u
         p = self.params
 
-        # Lực lốp
-        Fyf, Fyr = self.tire_forces(vx, vy, r, delta)
+        # Lực lốp (truyền ax để tính chuyển tải dọc + friction ellipse)
+        Fyf, Fyr = self.tire_forces(vx, vy, r, delta, ax)
 
         # 6 phương trình
         dX = vx * np.cos(psi) - vy * np.sin(psi)
