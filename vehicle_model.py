@@ -11,14 +11,10 @@ class VehicleParams:
     """Tham số xe
 
     Nguồn tham số:
-        - m, Iz: gần khớp với ví dụ sedan tham chiếu trong Rajesh Rajamani,
-          "Vehicle Dynamics and Control" (Springer, 2012), chương 3,
-          trong đó m=1573 kg, Iz=2873 kg*m^2 được mô tả là đại diện cho
-          một sedan hành khách. lf, lr và Cf, Cr KHÔNG khớp với giá trị
-          tương ứng của nguồn này (Rajamani dùng lf=1.1, lr=1.58,
-          Cf=Cr=80000 N/rad) nên không được coi là đã có cùng nguồn gốc;
-          cần rà soát/hiệu chỉnh lại Cf, Cr trước khi dùng cho tuyên bố
-          định lượng.
+        - m, Iz, lf, lr, Cf, Cr: lấy nguyên bộ từ ví dụ sedan trong Rajesh
+          Rajamani, "Vehicle Dynamics and Control" (Springer, 2012),
+          chương 3: m=1573 kg, Iz=2873 kg*m^2, lf=1.1 m, lr=1.58 m,
+          Cf=Cr=80000 N/rad (độ cứng cả cầu). Wheelbase L = lf + lr.
         - mu: đối chiếu khoảng giá trị với Michael Taylor, "Implementation
           and Validation of the Fiala Tire Model in Chrono", Technical
           Report TR-2015-13 (2015), dùng Umin=0.9/Umax=1.0 khi kiểm định
@@ -33,14 +29,14 @@ class VehicleParams:
           nguồn riêng nếu dùng cho tuyên bố định lượng.
     """
     def __init__(self):
-        self.m = 1575.0       # Khối lượng (kg)
-        self.L = 2.5          # Wheelbase (m)
-        self.lf = 1.2         # Trọng tâm -> trục trước (m)
-        self.lr = 1.3         # Trọng tâm -> trục sau (m)
+        self.m = 1573.0       # Khối lượng (kg) - Rajamani 2012
+        self.lf = 1.1         # Trọng tâm -> trục trước (m) - Rajamani 2012
+        self.lr = 1.58        # Trọng tâm -> trục sau (m) - Rajamani 2012
+        self.L = self.lf + self.lr  # Wheelbase (m)
         self.h = 0.55         # Chiều cao trọng tâm (m) - giả định minh họa, cần rà soát
-        self.Iz = 2875.0      # Mô-men quán tính yaw (kg*m^2)
-        self.Cf = 19000.0     # Độ cứng góc trượt cầu trước (N/rad) - giả định, cần rà soát
-        self.Cr = 33000.0     # Độ cứng góc trượt cầu sau (N/rad) - giả định, cần rà soát
+        self.Iz = 2873.0      # Mô-men quán tính yaw (kg*m^2) - Rajamani 2012
+        self.Cf = 80000.0     # Độ cứng góc trượt cả cầu trước (N/rad) - Rajamani 2012
+        self.Cr = 80000.0     # Độ cứng góc trượt cả cầu sau (N/rad) - Rajamani 2012
         self.mu = 0.9         # Hệ số ma sát lốp-mặt đường (giả định minh họa, xem Taylor 2015)
         self.g = 9.81         # Gia tốc trọng trường (m/s^2)
         self.Ts = 0.1         # Chu kỳ lấy mẫu (s)

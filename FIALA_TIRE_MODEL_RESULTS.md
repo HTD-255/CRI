@@ -112,13 +112,13 @@ test_simulation.py::test_front_axle_retains_lateral_capacity_at_max_acceleration
 
 ## 3. Đặc tính số của luật lốp Fiala (tham số hiện tại)
 
-Với `m=1575 kg`, `L=2.5 m`, `lf=1.2 m`, `lr=1.3 m`, `mu=0.9`, `g=9.81 m/s^2`:
+Với bộ tham số Rajamani 2012 (`m=1573 kg`, `lf=1.1 m`, `lr=1.58 m`, `L=lf+lr=2.68 m`, `Cf=Cr=80000 N/rad`), `mu=0.9`, `g=9.81 m/s^2`:
 
-- Tải pháp tuyến tĩnh: `Fzf = 8034.4 N`, `Fzr = 7416.4 N`.
-- Giới hạn ma sát (lực bão hòa tối đa): `mu*Fzf = 7231.0 N`, `mu*Fzr = 6674.7 N`.
+- Tải pháp tuyến tĩnh: `Fzf = 9097.5 N`, `Fzr = 6333.7 N`.
+- Giới hạn ma sát (lực bão hòa tối đa): `mu*Fzf = 8187.7 N`, `mu*Fzr = 5700.3 N`.
 - Góc trượt bắt đầu bão hòa (`tan(alpha) = 3*mu*Fz/C`):
-  - Cầu trước (`Cf=19000 N/rad`): `alpha_sat_f ≈ 48.8°`.
-  - Cầu sau (`Cr=33000 N/rad`): `alpha_sat_r ≈ 31.2°`.
+  - Cầu trước: `alpha_sat_f ≈ 17.6°`.
+  - Cầu sau: `alpha_sat_r ≈ 12.2°`.
 
 Bảng lực ngang theo góc trượt (tính trực tiếp từ `_fiala_lateral_force`,
 `vx=15 m/s`):
@@ -126,24 +126,22 @@ Bảng lực ngang theo góc trượt (tính trực tiếp từ `_fiala_lateral_
 | alpha (deg) | Fyf (N) | Fyr (N) |
 |---:|---:|---:|
 | 0 | 0.0 | 0.0 |
-| 1 | 326.6 | 559.6 |
-| 2 | 643.4 | 1087.3 |
-| 3 | 950.7 | 1584.4 |
-| 4 | 1248.9 | 2051.9 |
-| 5 | 1538.2 | 2490.9 |
-| 7 | 2091.0 | 3287.3 |
-| 10 | 2859.4 | 4291.7 |
-| 15 | 3989.7 | 5512.4 |
-| 20 | 4945.1 | 6247.0 |
-| 30 | 6357.5 | 6674.0 (gần bão hòa) |
-| 50 | 7231.0 (bão hòa) | 6674.7 (bão hòa) |
+| 1 | 1318.5 | 1285.5 |
+| 2 | 2488.0 | 2362.1 |
+| 3 | 3517.7 | 3248.7 |
+| 4 | 4416.8 | 3963.7 |
+| 5 | 5194.2 | 4525.3 |
+| 7 | 6418.3 | 5260.9 |
+| 10 | 7556.0 | 5669.7 |
+| 15 | 8170.8 | 5700.3 (bão hòa) |
+| 20 | 8187.7 (bão hòa) | 5700.3 (bão hòa) |
+| 30 | 8187.7 | 5700.3 |
+| 50 | 8187.7 | 5700.3 |
 
-Quan sát: cầu sau bão hòa sớm hơn cầu trước (~31° so với ~49°) do `Cr/Fzr`
-lớn hơn `Cf/Fzf`; đây là hệ quả trực tiếp của việc `Cf`, `Cr` hiện chưa có
-nguồn gốc độc lập đã xác minh (xem mục 13.8 của
-[RESEARCH_PLAN_CRI_SEDAN.md](./RESEARCH_PLAN_CRI_SEDAN.md)), nên các góc bão
-hòa này chỉ mang tính minh họa, không phải số liệu đã kiểm chứng cho một lốp
-thực tế.
+Quan sát: cầu sau bão hòa sớm hơn cầu trước (~12° so với ~18°) do `Cr/Fzr`
+lớn hơn `Cf/Fzf` (cùng `C`, tải sau nhỏ hơn). Toàn bộ tham số xe nay lấy từ
+một nguồn công bố duy nhất (Rajamani 2012, ch. 3), nên không còn "bộ trộn".
+Ngoại lệ vẫn là `h=0.55 m` (giả định) và `mu=0.9` (tham chiếu Taylor 2015).
 
 Lệnh tái tạo:
 
@@ -170,21 +168,20 @@ ngang bão hòa (cầu trước, `alpha` đủ lớn để bão hòa):
 
 | `ax` (m/s²) | Tình huống | `Fzf` (N) | `Fx_f` (N, ước lượng) | `mu*Fzf` (chỉ do Fz động) | Giới hạn lực ngang bão hòa thực tế (friction ellipse) |
 |---:|---|---:|---:|---:|---:|
-| 0 | giữ tốc độ | 8034.4 | 0.0 | 7231.0 | 7231.0 |
-| -6 | phanh gấp | 10113.4 | -6185.6 | 9102.1 | 6677.3 |
-| +3 | tăng tốc | 6994.9 | 2139.1 | 6295.4 | 5920.8 |
-| +8 (ax_max) | tăng tốc tối đa | 5262.4 | 4291.4 | 4736.2 | 2003.6 |
+| 0 | giữ tốc độ | 9097.5 | 0.0 | 8187.7 | 8187.7 |
+| -6 | phanh gấp | 11034.4 | -6748.8 | 9930.9 | 7285.4 |
+| +3 | tăng tốc | 8129.0 | 2485.9 | 7316.1 | 6880.8 |
+| +8 (ax_max) | tăng tốc tối đa | 6514.9 | 5312.9 | 5863.4 | 2480.5 |
 
 Quan sát: phanh gấp làm `Fzf` tăng (chuyển tải về phía trước) nên nếu chỉ xét
-riêng `mu*Fz` thì giới hạn lực ngang tưởng như tăng khá nhiều (7231.0 ->
-9102.1 N); nhưng phần ma sát bị chiếm dụng bởi lực dọc (`Fx_f`) qua friction
-ellipse kéo giới hạn thực tế xuống còn 6677.3 N — thấp hơn mức "chỉ do `Fz`
-động", dù vẫn thấp hơn một chút so với mốc tĩnh ban đầu (7231.0 N). Ở
-`ax=8 m/s²` (tăng tốc tối đa), lực ngang khả dụng giảm còn ~28% so với mốc
-tĩnh (2003.6 N so với 7231.0 N) — phản ánh thực tế là xe mất phần lớn khả
-năng vào cua khi tăng tốc gắt, nhưng **không** mất hoàn toàn (khác với lỗi đã
-phát hiện và sửa ở mục 1b, nơi giá trị này từng bị tính sai thành 0). Đây
-chính là nội dung được kiểm chứng trong
+riêng `mu*Fz` thì giới hạn lực ngang tưởng như tăng (8187.7 -> 9930.9 N);
+nhưng phần ma sát bị chiếm dụng bởi lực dọc (`Fx_f`) qua friction ellipse
+kéo giới hạn thực tế xuống còn 7285.4 N — thấp hơn mức "chỉ do `Fz` động" và
+thấp hơn mốc tĩnh (8187.7 N). Ở `ax=8 m/s²` (tăng tốc tối đa), lực ngang
+khả dụng giảm còn ~30% so với mốc tĩnh (2480.5 N so với 8187.7 N) — xe mất
+phần lớn khả năng vào cua khi tăng tốc gắt, nhưng **không** mất hoàn toàn
+(khác với lỗi đã sửa ở mục 1b, nơi giá trị này từng bị tính sai thành 0).
+Đây chính là nội dung được kiểm chứng trong
 `test_friction_ellipse_reduces_lateral_capacity_under_hard_braking` và
 `test_front_axle_retains_lateral_capacity_at_max_acceleration`.
 
@@ -205,17 +202,21 @@ for ax in [0.0, -6.0, 3.0]:
 ## 4. Kết quả mô phỏng closed-loop (NMPC + Pure Pursuit + CRI)
 
 Chạy một episode mặc định (`SimConfig(max_steps=300)`, kịch bản
-`lateral_zigzag`), so sánh 3 trạng thái của mô hình lốp:
+`lateral_zigzag`), so sánh 4 trạng thái của mô hình lốp/tham số. Cột (D) là trạng thái **hiện
+tại** (bộ tham số Rajamani 2012 đầy đủ):
 
-| Chỉ tiêu | (A) Fiala thuần, tải tĩnh (trước friction ellipse) | (B) + friction ellipse, **có lỗi mục 1b** | (C) + friction ellipse, **đã sửa lỗi** |
-|---|---:|---:|---:|
-| Số bước mô phỏng thực hiện | 156 / 300 (`target_end`) | 156 / 300 (`target_end`) | 156 / 300 (`target_end`) |
-| Phân bố mode | NMPC: 35, PP: 10, NO_TRACK: 111 | NMPC: 35, PP: 1, NO_TRACK: 120 | NMPC: 29, PP: 23, NO_TRACK: 104 |
-| Khoảng cách nhỏ nhất ego-target | 2.591 m | 29.735 m | **6.339 m** |
-| Khoảng cách cuối cùng | 64.519 m | 133.114 m | 51.146 m |
-| Thời điểm vào ngưỡng gần (< 4 m) | t = 6.0 s | không xảy ra | không xảy ra (nhưng gần hơn (B) nhiều) |
-| CRI trung bình / min / max | 0.172 / 0.000 / 0.824 | 0.1819 / 0.000 / 0.8596 | 0.199 / 0.000 / 0.811 |
-| Gia tốc ngang kinematic lớn nhất | 83.124 m/s² (bất thường) | 0.184 m/s² | 129.978 m/s² (bất thường, xem ghi chú) |
+| Chỉ tiêu | (A) Fiala thuần, tải tĩnh | (B) + friction ellipse, **có lỗi mục 1b** | (C) + ellipse đã sửa, tham số cũ (`Cf=19000`, `Cr=33000`) | (D) + ellipse đã sửa, **tham số Rajamani** |
+|---|---:|---:|---:|---:|
+| Số bước mô phỏng | 156 / 300 (`target_end`) | 156 / 300 | 156 / 300 | 156 / 300 |
+| Phân bố mode | NMPC: 35, PP: 10, NO_TRACK: 111 | NMPC: 35, PP: 1, NO_TRACK: 120 | NMPC: 29, PP: 23, NO_TRACK: 104 | NMPC: 32, PP: 9, NO_TRACK: 115 |
+| Khoảng cách nhỏ nhất ego-target | 2.591 m | 29.735 m | 6.339 m | **6.266 m** |
+| Khoảng cách cuối cùng | 64.519 m | 133.114 m | 51.146 m | 95.468 m |
+| Thời điểm vào ngưỡng gần (< 4 m) | t = 6.0 s | không | không | không |
+| CRI trung bình / min / max | 0.172 / 0 / 0.824 | 0.1819 / 0 / 0.8596 | 0.199 / 0 / 0.811 | 0.1855 / 0 / 0.8774 |
+| `lat_accel_kin` lớn nhất | 83.124 m/s² | 0.184 m/s² | 129.978 m/s² | 174.315 m/s² |
+
+Chuyển sang bộ Rajamani gần như không đổi `min_dist` (6.34 -> 6.27 m), tức
+kết luận định tính không phụ thuộc vào việc chọn bộ tham số cũ hay Rajamani.
 
 **Kết luận:** sau khi sửa lỗi phân bổ lực dọc (mục 1b), kết quả cải thiện rõ
 rệt so với (B) — khoảng cách nhỏ nhất giảm từ 29.7 m xuống 6.3 m, gần với
@@ -256,80 +257,47 @@ print('max_abs_lat_accel_kin:', float(np.max(log['lat_accel_kin'])))
 "
 ```
 
-## 5. Phân tích độ nhạy `Cf`/`Cr` (đã chạy lại sau khi sửa lỗi mục 1b)
+## 5. Phân tích độ nhạy `Cf`/`Cr` (quanh bộ Rajamani, sau khi sửa lỗi mục 1b)
 
-Chạy lại kịch bản closed-loop mặc định (`max_steps=300`) với `Cf`, `Cr` quét
-theo hệ số 0.5×, 1×, 2×, 4× giá trị hiện tại, cộng thêm mốc so sánh
-`Cf=Cr=80000 N/rad` (giá trị của Rajamani cho cùng loại sedan), **trên mô
-hình đã sửa lỗi friction ellipse**:
+Chạy lại kịch bản closed-loop mặc định (`max_steps=300`), nhân `Cf` và `Cr`
+(cơ sở `80000 N/rad`, Rajamani 2012) với hệ số 0.5×, 1×, 2×, 4×:
 
-| factor | Cf (N/rad) | Cr (N/rad) | min_dist (m) | CRI trung bình | NMPC | PP_FALLBACK | NO_TRACK | steps |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 0.5 | 9500 | 16500 | 11.655 | 0.1830 | 22 | 25 | 109 | 156 |
-| 1.0 (hiện tại) | 19000 | 33000 | 6.339 | 0.1990 | 29 | 23 | 104 | 156 |
-| 2.0 | 38000 | 66000 | 2.653 | 0.2213 | 43 | 9 | 104 | 156 |
-| 4.0 | 76000 | 132000 | 9.969 | 0.1525 | 30 | 2 | 124 | 156 |
-| — (Rajamani) | 80000 | 80000 | 6.623 | 0.1893 | 33 | 8 | 115 | 156 |
+| factor | Cf = Cr (N/rad) | min_dist (m) | CRI trung bình | NMPC | PP_FALLBACK | NO_TRACK | steps |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.5 | 40000 | 4.855 | 0.2096 | 31 | 23 | 102 | 156 |
+| 1.0 (Rajamani, hiện tại) | 80000 | 6.266 | 0.1855 | 32 | 9 | 115 | 156 |
+| 2.0 | 160000 | 5.690 | 0.2039 | 35 | 13 | 108 | 156 |
+| 4.0 | 320000 | 3.473 | 0.2018 | 31 | 18 | 107 | 156 |
 
-**Nhận xét (đã thay đổi so với kết quả sweep trước khi sửa lỗi mục 1b):**
-sau khi sửa lỗi friction ellipse, kết quả **nhạy cảm rõ rệt** với `Cf`/`Cr`
-— `min_dist` dao động từ 2.65 m (factor 2.0) đến 11.66 m (factor 0.5), và
-phân bố mode (NMPC/PP_FALLBACK) cũng thay đổi đáng kể theo từng mức. Đây là
-hành vi hợp lý hơn nhiều so với sweep trước đó (gần như phẳng tuyệt đối),
-vốn là dấu hiệu gián tiếp của chính lỗi đã sửa (khi `Cf`/`Cr` không còn ảnh
-hưởng nhiều vì cầu trước đã mất khả năng lái do lỗi, không phải vì hệ thống
-thực sự không nhạy cảm với tham số này).
+**Nhận xét:** `min_dist` nằm trong khoảng 3.5–6.3 m trên dải 8× của
+`Cf`/`Cr`, không đơn điệu (hệ vòng kín phi tuyến có chuyển mode rời rạc).
+Kết quả không bao giờ vào ngưỡng gần < 4 m ở các mức ≤ 2×, nên kết luận
+định tính ("tiến gần nhưng không đạt ngưỡng") ổn định với bộ tham số
+Rajamani. Với bộ cũ (`Cf=19000`, `Cr=33000`) `min_dist` = 6.339 m, gần như
+trùng bộ Rajamani (6.266 m). Cần lặp lại trên nhiều kịch bản/seed trước khi
+khái quát hóa.
 
-Biến thiên **không đơn điệu** theo `factor` (không phải "Cf/Cr càng lớn thì
-càng tốt" một cách tuyến tính) — đây là hệ quả tự nhiên của một hệ vòng kín
-phi tuyến có chuyển mode rời rạc (NMPC/PP/hysteresis/mất track), không phải
-dấu hiệu lỗi. Giá trị `Cf`/`Cr` hiện tại (factor 1.0) cho kết quả gần tương
-đương mốc Rajamani (6.34 m so với 6.62 m) — một điểm dữ liệu khác hỗ trợ (dù
-không chứng minh) rằng độ lớn hiện tại không quá bất hợp lý so với tài liệu
-tham chiếu, trong kịch bản cụ thể này.
-
-**Kết luận cho mục đích "chứng minh tính legit":** phân tích độ nhạy này
-**không thay thế** việc cần một nguồn đo/hiệu chuẩn thực tế cho `Cf`, `Cr`.
-Với mô hình đã sửa lỗi, kết quả hiện **nhạy cảm đáng kể** với `Cf`/`Cr` (khác
-với kết luận "ít nhạy cảm" rút ra từ bản có lỗi) — nghĩa là việc chưa có
-nguồn đo thực tế cho `Cf`/`Cr` là một rủi ro định lượng thực sự, cần ưu tiên
-xử lý trước khi dùng kết quả closed-loop cho báo cáo. Cần lặp lại sweep này
-trên nhiều kịch bản khác, nhiều seed, trước khi khái quát hóa kết luận.
-
-Script tái tạo: `_sensitivity_sweep.py` (xem nội dung bên dưới, không commit
-kèm theo file kết quả này vì chỉ là script dùng một lần):
+Script tái tạo (dùng một lần, không commit):
 
 ```python
 import numpy as np
 from simulation import SimConfig, run_simulation
 from vehicle_model import VehicleParams
 
-base_Cf, base_Cr = 19000.0, 33000.0
 orig_init = VehicleParams.__init__
-
-def make_patched(cf, cr):
+def make_patched(f):
     def patched(self):
         orig_init(self)
-        self.Cf = cf
-        self.Cr = cr
+        self.Cf *= f
+        self.Cr *= f
     return patched
 
-rows = []
-for factor in [0.5, 1.0, 2.0, 4.0]:
-    cf, cr = base_Cf * factor, base_Cr * factor
-    VehicleParams.__init__ = make_patched(cf, cr)
+for f in [0.5, 1.0, 2.0, 4.0]:
+    VehicleParams.__init__ = make_patched(f)
     log = run_simulation(SimConfig(max_steps=300))
-    VehicleParams.__init__ = orig_init
-    rows.append((factor, cf, cr, np.min(log['distance']), np.mean(log['cri']), log['counts']))
-
-VehicleParams.__init__ = make_patched(80000.0, 80000.0)  # Rajamani
-log_raj = run_simulation(SimConfig(max_steps=300))
+    print(f, np.min(log['distance']), np.mean(log['cri']), log['counts'])
 VehicleParams.__init__ = orig_init
-for r in rows:
-    print(*r)
-print('Rajamani:', np.min(log_raj['distance']), np.mean(log_raj['cri']), log_raj['counts'])
 ```
-
 ## 6. Việc đã hoàn thành ở vòng rà soát này
 
 - Friction ellipse kết hợp lực dọc-ngang theo cầu (`_max_lateral_friction`).
@@ -347,13 +315,11 @@ print('Rajamani:', np.min(log_raj['distance']), np.mean(log_raj['cri']), log_raj
 
 ## 7. Việc chưa làm / cần rà soát tiếp
 
-- `Cf`, `Cr` vẫn là giá trị giả định, **chưa có nguồn đo/hiệu chuẩn thực tế**
-  (xem mục 13.8 của [RESEARCH_PLAN_CRI_SEDAN.md](./RESEARCH_PLAN_CRI_SEDAN.md)).
-  Sweep ở mục 5 (đã chạy lại sau khi sửa lỗi mục 1b) cho thấy **độ nhạy đáng
-  kể** với `Cf`/`Cr` — khác với kết luận "ít nhạy cảm" rút ra trước đây từ dữ
-  liệu có lỗi — nên đây là rủi ro định lượng thực sự cần ưu tiên xử lý (tìm
-  nguồn đo riêng hoặc mở rộng sweep sang nhiều kịch bản/seed khác) trước khi
-  trình bày `Cf`/`Cr` là tham số đã xác thực.
+- Một lưu ý về phạm vi nguồn: `m`, `Iz`, `lf`, `lr`, `Cf`, `Cr` nay lấy từ
+  một nguồn công bố (Rajamani 2012, ch. 3; `Cf`, `Cr` là độ cứng **cả cầu**).
+  Cần tự kiểm tra lại bảng số liệu gốc trong sách khi trích dẫn. Bộ tham số
+  MathWorks cũ (19000/33000 N/rad) đã bị bỏ vì không phải nguồn học thuật.
+  Sweep ở mục 5 vẫn nên được lặp lại trên nhiều kịch bản/seed.
 - `h=0.55 m` (chiều cao trọng tâm) là giả định minh họa, chưa có nguồn riêng.
 - Phân bổ lực dọc giữa hai cầu (`_longitudinal_force_split`, nay theo tỉ lệ
   tải **động**) vẫn là giả định đơn giản hóa, không phản ánh hệ dẫn động cụ

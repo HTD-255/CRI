@@ -105,11 +105,10 @@ Với tham số bất định, khai báo một miền hợp lý và dùng trong 
 
 **Rà soát hiện trạng (sau khi chuyển sang luật lốp Fiala):**
 
-- `m=1575 kg` và `Iz=2875 kg*m^2` gần khớp với ví dụ sedan tham chiếu trong **Rajesh Rajamani**, *Vehicle Dynamics and Control* (Springer, 2012, chương 3), trong đó `m=1573 kg`, `Iz=2873 kg*m^2` được mô tả là đại diện cho một sedan hành khách. Có thể xếp hai tham số này vào nhóm (2).
-- `lf=1.2 m`, `lr=1.3 m`, `Cf=19000 N/rad`, `Cr=33000 N/rad` **không khớp** với giá trị tương ứng của cùng nguồn đó (**Rajamani**, `lf=1.1`, `lr=1.58`, `Cf=Cr=80000 N/rad`). Không được coi `Cf`/`Cr` hiện tại là đã có nguồn gốc cùng ví dụ với `m`/`Iz`. Cần làm một trong hai việc trước khi báo cáo: (a) tìm nguồn riêng hợp lý cho `lf`, `lr`, `Cf`, `Cr` và ghi rõ nguồn, hoặc (b) xếp các tham số này vào nhóm (3) giả định mô phỏng và chạy phân tích độ nhạy, không trình bày như giá trị đã được xác thực.
+- `m=1573 kg`, `Iz=2873 kg*m^2`, `lf=1.1 m`, `lr=1.58 m`, `Cf=Cr=80000 N/rad` (độ cứng **cả cầu**) lấy nguyên bộ từ ví dụ sedan trong **Rajesh Rajamani**, *Vehicle Dynamics and Control* (Springer, 2012, chương 3), mô tả là đại diện cho một sedan hành khách; `L=lf+lr=2.68 m`. Xếp vào nhóm (2) trích tài liệu. Bộ MathWorks cũ (`Cf=19000`, `Cr=33000`, `lf=1.2`, `lr=1.3`) đã bị loại vì không phải nguồn học thuật và không nhất quán nguồn. Cần tự đối chiếu lại bảng số liệu gốc trong sách khi trích dẫn.
 - `mu=0.9` đối chiếu được với khoảng giá trị `Umin=0.9`/`Umax=1.0` dùng trong **Michael Taylor**, *Implementation and Validation of the Fiala Tire Model in Chrono*, Technical Report TR-2015-13 (2015), nhưng nguồn đó dùng giá trị này để kiểm định triển khai mô hình Fiala, không phải để mô tả một cặp lốp-mặt đường cụ thể. Xếp vào nhóm (3) giả định mô phỏng, có đối chiếu độ lớn với tài liệu.
 - `h=0.55 m` (chiều cao trọng tâm, dùng cho chuyển tải dọc) là giá trị minh họa nằm trong khoảng điển hình của sedan hành khách, chưa có nguồn riêng. Xếp vào nhóm (3) giả định mô phỏng.
-- Đã chạy phân tích độ nhạy `Cf`/`Cr` (sweep 0.5×–4× giá trị hiện tại, cộng mốc so sánh `Cf=Cr=80000 N/rad` của Rajamani) trên kịch bản closed-loop đầy đủ; kết quả chi tiết ở [FIALA_TIRE_MODEL_RESULTS.md](./FIALA_TIRE_MODEL_RESULTS.md) mục 5. Kết quả **không thay thế** việc cần một nguồn đo thực tế cho `Cf`/`Cr`, chỉ cho biết mức độ nhạy của các chỉ tiêu đã chọn trong kịch bản đã chạy.
+- Đã chạy phân tích độ nhạy `Cf`/`Cr` (sweep 0.5×–4× quanh bộ Rajamani) trên kịch bản closed-loop đầy đủ; chi tiết ở [FIALA_TIRE_MODEL_RESULTS.md](./FIALA_TIRE_MODEL_RESULTS.md) mục 5.
 
 #### Lực lốp và gia tốc
 
@@ -423,11 +422,11 @@ Tạo bảng làm việc với các cột: **Tên tham số | Giá trị/miền 
 
 | Tham số | Giá trị hiện tại | Nhóm | Tác giả | Nguồn đối chiếu | Ghi chú/độ bất định |
 |---|---|---|---|---|---|
-| `m` | 1575 kg | (2) trích tài liệu | Rajesh Rajamani | Rajamani, *Vehicle Dynamics and Control*, Springer 2012, ch. 3 (`m=1573 kg`, mô tả "representative of parameters for a passenger sedan") | Gần khớp, chênh lệch không đáng kể; có thể trích dẫn trực tiếp. |
-| `Iz` | 2875 kg·m² | (2) trích tài liệu | Rajesh Rajamani | Cùng nguồn Rajamani (`Iz=2873 kg*m^2`) | Gần khớp, cùng nguồn với `m`. |
-| `lf`, `lr` | 1.2 m, 1.3 m | (3) giả định mô phỏng | Rajesh Rajamani (nguồn đối chiếu, không khớp) | Không khớp Rajamani (`lf=1.1`, `lr=1.58`) | Không nên trích cùng nguồn với `m`/`Iz`; cần nguồn riêng hoặc công bố là giả định + sensitivity theo `lf/lr`. |
-| `Cf`, `Cr` | 19000, 33000 N/rad | (3) giả định mô phỏng, cần rà soát | Rajesh Rajamani (nguồn đối chiếu, không khớp) | Thấp hơn 2.4–4 lần so với `Cf=Cr=80000 N/rad` của Rajamani cho cùng loại sedan | Điểm yếu nhất của bộ tham số hiện tại; ưu tiên tìm nguồn riêng (đo/hiệu chuẩn hoặc benchmark khác phù hợp quy ước "theo cầu") trước khi viết bài, hoặc chạy sensitivity rộng và nêu rõ giới hạn. |
+| `m` | 1573 kg | (2) trích tài liệu | Rajesh Rajamani | Rajamani, *Vehicle Dynamics and Control*, Springer 2012, ch. 3 ("representative of parameters for a passenger sedan") | Lấy trực tiếp. |
+| `Iz` | 2873 kg·m² | (2) trích tài liệu | Rajesh Rajamani | Cùng nguồn Rajamani | Lấy trực tiếp. |
+| `lf`, `lr` | 1.1 m, 1.58 m | (2) trích tài liệu | Rajesh Rajamani | Cùng nguồn Rajamani | Lấy trực tiếp; L = 2.68 m. |
+| `Cf`, `Cr` | 80000, 80000 N/rad (cả cầu) | (2) trích tài liệu | Rajesh Rajamani | Cùng nguồn Rajamani (Cf=Cr=80000 N/rad) | Lấy trực tiếp; vẫn nên chạy sensitivity (FIALA_TIRE_MODEL_RESULTS.md mục 5, 0.5×–4×). |
 | `mu` | 0.9 | (3) giả định mô phỏng, đối chiếu độ lớn | Michael Taylor | Taylor, *Implementation and Validation of the Fiala Tire Model in Chrono*, Technical Report TR-2015-13 (2015): `Umin=0.9`, `Umax=1.0` dùng để kiểm định triển khai Fiala | Không phải giá trị đo cho một cặp lốp-mặt đường cụ thể; chỉ dùng được để nói "cùng khoảng giá trị với tài liệu kiểm định mô hình Fiala". |
 | `h` (chiều cao trọng tâm) | 0.55 m | (3) giả định mô phỏng | Không có nguồn cụ thể; nằm trong khoảng điển hình được nhắc tới trong tài liệu động lực học xe (vd. Rajamani 2012, ch.2, công thức chuyển tải dọc) | Dùng cho `normal_loads()` (chuyển tải dọc khi phanh/tăng tốc) và friction ellipse; cần nguồn riêng nếu dùng cho tuyên bố định lượng. |
 
-Khi viết lại phần methodology, nên trình bày tách bạch: `m`, `Iz` là tham số có đối chiếu tài liệu; `lf`, `lr`, `Cf`, `Cr` là giả định mô phỏng cần sensitivity; `mu` là giả định có đối chiếu độ lớn nhưng không phải giá trị đo thực địa. Tránh gộp chung cả bốn/năm tham số thành một câu "tham số lấy từ tài liệu tham khảo".
+Khi viết lại phần methodology, nên trình bày tách bạch: `m`, `Iz`, `lf`, `lr`, `Cf`, `Cr` lấy từ một nguồn (Rajamani 2012); `mu` là giả định có đối chiếu độ lớn (Taylor 2015) nhưng không phải giá trị đo thực địa; `h` là giả định chưa có nguồn riêng.
