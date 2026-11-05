@@ -115,3 +115,26 @@ def test_friction_ellipse_reduces_lateral_capacity_under_hard_braking():
     # ngang bão hòa thấp hơn giới hạn tính riêng từ Fz động (friction
     # ellipse), dù Fz cầu trước đã tăng lên do chuyển tải khi phanh.
     assert force_hard_brake < friction_limit_dynamic_load_only
+
+
+def test_front_axle_retains_lateral_capacity_at_max_acceleration():
+    """Hồi quy cho lỗi đã sửa: `_longitudinal_force_split` trước đây chia
+    lực dọc theo tải TĨNH trong khi friction ellipse dùng tải ĐỘNG, khiến
+    lực dọc yêu cầu tại cầu trước có thể vượt quá `mu*Fz` động của chính
+    cầu đó khi tăng tốc gắt (do chuyển tải làm giảm Fzf), làm cầu trước bị
+    tính sai là mất toàn bộ độ bám ngang (`max_lateral_force=0`) dù tổng
+    lực dọc toàn xe vẫn khả thi. Việc mất bám ngang hoàn toàn khiến NMPC
+    không còn khả năng lái (`delta` không ảnh hưởng tới lực ngang) khi
+    tăng tốc tối đa.
+    """
+    model = DynamicBicycleModel()
+    p = model.params
+
+    Fzf, Fzr = model.normal_loads(p.ax_max)
+    Fxf, Fxr = model._longitudinal_force_split(p.ax_max, Fzf, Fzr)
+    max_Fyf = model._max_lateral_friction(p.mu, Fzf, Fxf)
+
+    assert max_Fyf > 0.0, (
+        "Cầu trước không còn khả năng lái khi tăng tốc tối đa; kiểm tra "
+        "lại tỉ lệ phân bổ lực dọc trong _longitudinal_force_split"
+    )

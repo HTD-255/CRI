@@ -157,19 +157,27 @@ class DynamicBicycleModel:
         Fzr = max(Fzr_static + transfer, 0.0)
         return Fzf, Fzr
 
-    def _longitudinal_force_split(self, ax):
-        """Phân bổ lực dọc tổng (`m*ax`) cho hai cầu theo tỉ lệ tải tĩnh.
+    def _longitudinal_force_split(self, ax, Fzf, Fzr):
+        """Phân bổ lực dọc tổng (`m*ax`) cho hai cầu theo tỉ lệ tải pháp
+        tuyến ĐỘNG (`Fzf`, `Fzr` sau chuyển tải, từ `normal_loads`), thay
+        vì tải tĩnh.
 
-        Đây là một giả định đơn giản hóa (không mô hình hệ dẫn động cụ
-        thể cầu trước/cầu sau/AWD); dùng để ước lượng mức sử dụng ma sát
-        dọc cho friction ellipse, cần rà soát lại nếu kịch bản có gia tốc
-        dọc lớn và cần độ chính xác cao hơn.
+        Đây vẫn là một giả định đơn giản hóa (coi như lực kéo/phanh được
+        phân bổ tỉ lệ với tải khả dụng mỗi cầu, không mô hình hệ dẫn động
+        cụ thể cầu trước/cầu sau/AWD); cần rà soát lại nếu kịch bản có
+        gia tốc dọc lớn và cần độ chính xác cao hơn theo drivetrain thật.
+        Dùng tải động thay vì tĩnh để tự nhất quán với ngân sách ma sát
+        của `_max_lateral_friction` tại cùng cầu: nếu chia theo tải tĩnh,
+        lực dọc yêu cầu tại một cầu có thể vượt quá `mu*Fz` động của
+        chính cầu đó (ví dụ cầu trước khi tăng tốc gắt làm giảm tải
+        trước), khiến cầu đó bị tính sai là mất toàn bộ độ bám ngang dù
+        tổng lực dọc toàn xe vẫn khả thi.
         """
-        p = self.params
-        Fzf_static = p.m * p.g * p.lr / p.L
-        Fzr_static = p.m * p.g * p.lf / p.L
-        front_frac = Fzf_static / (Fzf_static + Fzr_static)
-        Fx_total = p.m * ax
+        total_Fz = Fzf + Fzr
+        if total_Fz <= 0:
+            return 0.0, 0.0
+        front_frac = Fzf / total_Fz
+        Fx_total = self.params.m * ax
         return Fx_total * front_frac, Fx_total * (1.0 - front_frac)
 
     def tire_forces(self, vx, vy, r, delta, ax=0.0):
@@ -189,7 +197,7 @@ class DynamicBicycleModel:
 
         # Tải pháp tuyến động (có chuyển tải dọc) và friction ellipse.
         Fzf, Fzr = self.normal_loads(ax)
-        Fxf, Fxr = self._longitudinal_force_split(ax)
+        Fxf, Fxr = self._longitudinal_force_split(ax, Fzf, Fzr)
         max_Fyf = self._max_lateral_friction(p.mu, Fzf, Fxf)
         max_Fyr = self._max_lateral_friction(p.mu, Fzr, Fxr)
 

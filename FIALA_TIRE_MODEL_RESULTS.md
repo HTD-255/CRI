@@ -5,7 +5,8 @@ tuyến tính (`Fy = C*alpha`) bằng mô hình Fiala bão hòa trong
 [vehicle_model.py](./vehicle_model.py). Dùng làm tài liệu tham chiếu khi viết
 lại phần kết quả/methodology; không phải báo cáo cuối cùng.
 
-Ngày tạo: 2026-11-04. Môi trường: Python 3.12.8, pytest 9.2.0, Windows.
+Ngày tạo: 2026-11-04. Cập nhật: 2026-11-06 (sửa lỗi phân bổ lực dọc, xem mục
+1b). Môi trường: Python 3.12.8, pytest 9.2.0, Windows.
 
 ## 1. Thay đổi mã nguồn liên quan
 
@@ -19,8 +20,9 @@ Ngày tạo: 2026-11-04. Môi trường: Python 3.12.8, pytest 9.2.0, Windows.
   trục, có chuyển tải dọc khi phanh/tăng tốc (`Fzf = Fzf_static - m*ax*h/L`,
   `Fzr = Fzr_static + m*ax*h/L`), thay cho tải pháp tuyến tĩnh trước đây.
 - `DynamicBicycleModel._longitudinal_force_split`: **mới** — phân bổ lực dọc
-  tổng (`m*ax`) cho hai cầu theo tỉ lệ tải tĩnh; đây là giả định đơn giản hóa
-  (không mô hình hệ dẫn động cụ thể), cần rà soát nếu cần độ chính xác cao hơn.
+  tổng (`m*ax`) cho hai cầu theo tỉ lệ tải **động** (sau chuyển tải, xem mục
+  1b); đây là giả định đơn giản hóa (không mô hình hệ dẫn động cụ thể), cần
+  rà soát nếu cần độ chính xác cao hơn theo drivetrain thật.
 - `DynamicBicycleModel.tire_forces`: nhận thêm tham số `ax` (mặc định 0.0, nên
   tương thích ngược), dùng để tính tải pháp tuyến động và friction ellipse.
 - `VehicleParams`: thêm `mu=0.9` (hệ số ma sát), `g=9.81` và `h=0.55` (chiều
@@ -28,6 +30,47 @@ Ngày tạo: 2026-11-04. Môi trường: Python 3.12.8, pytest 9.2.0, Windows.
   được đánh dấu "giả định, cần rà soát" (xem
   [RESEARCH_PLAN_CRI_SEDAN.md](./RESEARCH_PLAN_CRI_SEDAN.md) mục 13.8 để biết
   chi tiết nguồn tham số).
+
+## 1b. Lỗi đã phát hiện và sửa: cầu trước mất toàn bộ khả năng lái khi tăng tốc gắt
+
+Ở lần triển khai friction ellipse đầu tiên, `_longitudinal_force_split` chia
+lực dọc tổng theo tỉ lệ **tải pháp tuyến tĩnh**, trong khi `_max_lateral_friction`
+(friction ellipse) lại dùng **tải pháp tuyến động** (`normal_loads`, đã gồm
+chuyển tải). Khi tăng tốc gắt (`ax` gần `ax_max=8 m/s^2`), chuyển tải làm
+giảm tải trọng cầu trước (`Fzf` động giảm), nhưng lực dọc yêu cầu tại cầu
+trước vẫn được tính theo tỉ lệ tải **tĩnh** (lớn hơn) — dẫn tới lực dọc yêu
+cầu tại cầu trước (vd. 6552 N) **vượt quá** giới hạn ma sát động của chính
+cầu đó (`mu*Fzf` động, vd. 4736 N). Phần âm bên trong friction ellipse bị
+chặn ở 0, khiến mô hình kết luận sai rằng **cầu trước mất 100% khả năng lái**
+mỗi khi tăng tốc tối đa — dù tổng lực dọc toàn xe vẫn hoàn toàn khả thi nếu
+phân bổ hợp lý hơn (cầu sau có nhiều tải hơn khi tăng tốc, nên có thể gánh
+phần lớn lực dọc).
+
+Hệ quả quan sát được trong mô phỏng closed-loop: NMPC hầu như không dùng
+`delta` nữa trong các bước tăng tốc tối đa (`delta≈0.001` thay vì dao động
+±0.45 như kỳ vọng), vì mô hình dự đoán bên trong NMPC cho rằng lái không còn
+tạo ra lực ngang nào. Khoảng cách nhỏ nhất ego-target trong kịch bản mặc định
+tăng từ 2.6 m (bản Fiala thuần, chưa có friction ellipse) lên 29.7 m (bản có
+lỗi) — một hồi quy đáng kể.
+
+**Cách sửa:** `_longitudinal_force_split` nay nhận thêm `Fzf`, `Fzr` (tải
+động, từ `normal_loads`) và chia lực dọc theo tỉ lệ **tải động** thay vì tải
+tĩnh — tự nhất quán với ngân sách ma sát mà `_max_lateral_friction` sử dụng
+cho cùng cầu đó. Đây vẫn là một giả định đơn giản hóa (không phản ánh
+drivetrain cụ thể FWD/RWD/AWD), nhưng không còn tạo ra mâu thuẫn nội tại
+giữa hai hàm.
+
+Ngân sách lực ngang khả dụng theo `ax` sau khi sửa (cầu trước):
+
+| `ax` (m/s²) | Fzf động (N) | Fxf yêu cầu (N) | Lực ngang khả dụng cầu trước (N) | Trước khi sửa |
+|---:|---:|---:|---:|---:|
+| 0 | 8034.4 | 0.0 | 7231.0 | 7231.0 (không đổi) |
+| +3 | 6994.9 | 2139.1 | 5920.8 | thấp hơn đáng kể (chia theo tải tĩnh, ước lượng ~5796) |
+| +8 (ax_max) | 5262.4 | 4291.4 | **2003.6** | **0.0** (lỗi: mất hoàn toàn khả năng lái) |
+| -5 (phanh) | 9766.9 | -4978.0 | 7244.8 | gần tương tự (ít bị ảnh hưởng vì phanh ít đổi) |
+
+Đã thêm test hồi quy `test_front_axle_retains_lateral_capacity_at_max_acceleration`
+để đảm bảo cầu trước luôn giữ được lực ngang khả dụng > 0 ở `ax=ax_max`.
 
 ## 2. Kết quả kiểm thử tự động (pytest)
 
@@ -51,11 +94,12 @@ test_simulation.py::test_fiala_matches_cornering_stiffness_at_small_slip PASSED
 test_simulation.py::test_fiala_force_is_odd_and_saturates_at_friction_limit PASSED
 test_simulation.py::test_braking_shifts_normal_load_to_front_axle PASSED
 test_simulation.py::test_friction_ellipse_reduces_lateral_capacity_under_hard_braking PASSED
+test_simulation.py::test_front_axle_retains_lateral_capacity_at_max_acceleration PASSED
 
-============================== 11 passed ==============================
+============================== 12 passed ==============================
 ```
 
-5 test cho mô hình lốp (Fiala + friction ellipse + tải pháp tuyến động):
+6 test cho mô hình lốp (Fiala + friction ellipse + tải pháp tuyến động):
 
 | Test | Mục tiêu kiểm tra |
 |---|---|
@@ -64,6 +108,7 @@ test_simulation.py::test_friction_ellipse_reduces_lateral_capacity_under_hard_br
 | `test_fiala_force_is_odd_and_saturates_at_friction_limit` | Lực là hàm lẻ theo `alpha` (`Fy(-a) = -Fy(a)`) và bão hòa đúng bằng `mu*Fz` tĩnh khi `ax=0` và `alpha` vượt góc bão hòa. |
 | `test_braking_shifts_normal_load_to_front_axle` | Phanh (`ax<0`) tăng `Fzf`/giảm `Fzr`; tăng tốc (`ax>0`) ngược lại; tổng `Fzf+Fzr` không đổi. |
 | `test_friction_ellipse_reduces_lateral_capacity_under_hard_braking` | Khi phanh gấp, lực ngang bão hòa thấp hơn giới hạn tính riêng từ `Fz` động (do một phần ma sát đã dùng cho lực dọc theo friction ellipse). |
+| `test_front_axle_retains_lateral_capacity_at_max_acceleration` | Hồi quy cho lỗi mục 1b: ở `ax=ax_max`, cầu trước phải còn lực ngang khả dụng `>0` (không được mất hoàn toàn khả năng lái). |
 
 ## 3. Đặc tính số của luật lốp Fiala (tham số hiện tại)
 
@@ -126,16 +171,22 @@ ngang bão hòa (cầu trước, `alpha` đủ lớn để bão hòa):
 | `ax` (m/s²) | Tình huống | `Fzf` (N) | `Fx_f` (N, ước lượng) | `mu*Fzf` (chỉ do Fz động) | Giới hạn lực ngang bão hòa thực tế (friction ellipse) |
 |---:|---|---:|---:|---:|---:|
 | 0 | giữ tốc độ | 8034.4 | 0.0 | 7231.0 | 7231.0 |
-| -6 | phanh gấp | 10113.4 | -4914.0 | 9102.1 | 7661.6 |
-| +3 | tăng tốc | 6994.9 | 2457.0 | 6295.4 | 5796.1 |
+| -6 | phanh gấp | 10113.4 | -6185.6 | 9102.1 | 6677.3 |
+| +3 | tăng tốc | 6994.9 | 2139.1 | 6295.4 | 5920.8 |
+| +8 (ax_max) | tăng tốc tối đa | 5262.4 | 4291.4 | 4736.2 | 2003.6 |
 
 Quan sát: phanh gấp làm `Fzf` tăng (chuyển tải về phía trước) nên nếu chỉ xét
 riêng `mu*Fz` thì giới hạn lực ngang tưởng như tăng khá nhiều (7231.0 ->
 9102.1 N); nhưng phần ma sát bị chiếm dụng bởi lực dọc (`Fx_f`) qua friction
-ellipse kéo giới hạn thực tế xuống còn 7661.6 N — thấp hơn đáng kể so với
-mức "chỉ do `Fz` động", dù vẫn còn cao hơn mốc tĩnh ban đầu. Đây chính là nội
-dung được kiểm chứng trong
-`test_friction_ellipse_reduces_lateral_capacity_under_hard_braking`.
+ellipse kéo giới hạn thực tế xuống còn 6677.3 N — thấp hơn mức "chỉ do `Fz`
+động", dù vẫn thấp hơn một chút so với mốc tĩnh ban đầu (7231.0 N). Ở
+`ax=8 m/s²` (tăng tốc tối đa), lực ngang khả dụng giảm còn ~28% so với mốc
+tĩnh (2003.6 N so với 7231.0 N) — phản ánh thực tế là xe mất phần lớn khả
+năng vào cua khi tăng tốc gắt, nhưng **không** mất hoàn toàn (khác với lỗi đã
+phát hiện và sửa ở mục 1b, nơi giá trị này từng bị tính sai thành 0). Đây
+chính là nội dung được kiểm chứng trong
+`test_friction_ellipse_reduces_lateral_capacity_under_hard_braking` và
+`test_front_axle_retains_lateral_capacity_at_max_acceleration`.
 
 Lệnh tái tạo:
 
@@ -145,7 +196,7 @@ from vehicle_model import DynamicBicycleModel
 model = DynamicBicycleModel()
 for ax in [0.0, -6.0, 3.0]:
     Fzf, Fzr = model.normal_loads(ax)
-    Fxf, Fxr = model._longitudinal_force_split(ax)
+    Fxf, Fxr = model._longitudinal_force_split(ax, Fzf, Fzr)
     max_Fyf = model._max_lateral_friction(model.params.mu, Fzf, Fxf)
     print(ax, Fzf, Fxf, max_Fyf)
 "
@@ -154,41 +205,38 @@ for ax in [0.0, -6.0, 3.0]:
 ## 4. Kết quả mô phỏng closed-loop (NMPC + Pure Pursuit + CRI)
 
 Chạy một episode mặc định (`SimConfig(max_steps=300)`, kịch bản
-`lateral_zigzag`) với luật lốp Fiala **đã có friction ellipse + tải pháp
-tuyến động**:
+`lateral_zigzag`), so sánh 3 trạng thái của mô hình lốp:
 
-| Chỉ tiêu | Giá trị (sau khi thêm friction ellipse + tải động) | Giá trị trước đó (chỉ Fiala thuần, tải tĩnh) |
-|---|---:|---:|
-| Số bước mô phỏng thực hiện | 156 / 300 (`target_end`) | 156 / 300 (`target_end`) |
-| Phân bố mode | NMPC: 35, PP_FALLBACK: 1, NO_TRACK: 120 | NMPC: 35, PP_FALLBACK: 10, NO_TRACK: 111 |
-| Khoảng cách nhỏ nhất ego-target | 29.735 m | 2.591 m |
-| Khoảng cách cuối cùng | 133.114 m | 64.519 m |
-| Thời điểm vào ngưỡng gần (< 4 m) | **không xảy ra** (`None`) | t = 6.0 s |
-| CRI trung bình / min / max | 0.1819 / 0.000 / 0.8596 | 0.172 / 0.000 / 0.824 |
-| Gia tốc ngang động học lớn nhất (kinematic, từ lệnh `delta` đã áp dụng) | 0.184 m/s² | 83.124 m/s² (bất thường) |
+| Chỉ tiêu | (A) Fiala thuần, tải tĩnh (trước friction ellipse) | (B) + friction ellipse, **có lỗi mục 1b** | (C) + friction ellipse, **đã sửa lỗi** |
+|---|---:|---:|---:|
+| Số bước mô phỏng thực hiện | 156 / 300 (`target_end`) | 156 / 300 (`target_end`) | 156 / 300 (`target_end`) |
+| Phân bố mode | NMPC: 35, PP: 10, NO_TRACK: 111 | NMPC: 35, PP: 1, NO_TRACK: 120 | NMPC: 29, PP: 23, NO_TRACK: 104 |
+| Khoảng cách nhỏ nhất ego-target | 2.591 m | 29.735 m | **6.339 m** |
+| Khoảng cách cuối cùng | 64.519 m | 133.114 m | 51.146 m |
+| Thời điểm vào ngưỡng gần (< 4 m) | t = 6.0 s | không xảy ra | không xảy ra (nhưng gần hơn (B) nhiều) |
+| CRI trung bình / min / max | 0.172 / 0.000 / 0.824 | 0.1819 / 0.000 / 0.8596 | 0.199 / 0.000 / 0.811 |
+| Gia tốc ngang kinematic lớn nhất | 83.124 m/s² (bất thường) | 0.184 m/s² | 129.978 m/s² (bất thường, xem ghi chú) |
 
-**Phát hiện quan trọng:** việc bật friction ellipse + tải pháp tuyến động đã
-thay đổi đáng kể hành vi closed-loop so với bản Fiala thuần túy trước đó,
-dù `Cf`, `Cr` và kịch bản giữ nguyên. Cụ thể, trong episode mặc định đã chạy,
-xe **không còn tới gần mục tiêu trong ngưỡng 4 m** (trước đó có, ở t=6s).
-Gia tốc ngang kinematic giảm mạnh (83 → 0.18 m/s²) cho thấy NMPC/PP giờ chọn
-lệnh lái ôn hòa hơn nhiều — khả năng là vì mô hình dự đoán bên trong NMPC
-(dùng cùng `DynamicBicycleModel`) giờ phản ánh đúng hơn giới hạn lực ngang
-khả dụng, khiến các lệnh lái gắt trước đây (vốn ngầm giả định lực lốp vô hạn
-khi `ax` lớn) không còn được xem là khả thi/tối ưu.
+**Kết luận:** sau khi sửa lỗi phân bổ lực dọc (mục 1b), kết quả cải thiện rõ
+rệt so với (B) — khoảng cách nhỏ nhất giảm từ 29.7 m xuống 6.3 m, gần với
+mốc (A) hơn nhiều, trong khi vẫn giữ được mô hình vật lý thực tế hơn (A)
+(có friction ellipse + tải động). Kết quả (C) chưa đạt lại chính xác mốc
+(A) — điều này **hợp lý**, vì (A) vốn cho phép xe dùng lực ngang không giới
+hạn ngay cả khi tăng tốc tối đa (vật lý không thực tế), nên (A) luôn là
+"best case" lạc quan hơn so với mọi mô hình có ràng buộc ma sát thực tế.
 
-Đây là một thay đổi hành vi cần được điều tra thêm (xem mục 6), **không nên
-diễn giải ngay là "mô hình mới tệ hơn"** — nhiều khả năng mô hình cũ (tải
-tĩnh, không friction ellipse) đã đánh giá quá cao khả năng bám đường của xe,
-và kết quả "tới gần mục tiêu" trước đó dựa trên giả định vật lý không thực
-tế. Trước khi dùng một trong hai bộ số cho báo cáo, cần xác định lại kịch
-bản/tham số điều khiển (ví dụ chân trời NMPC, trọng số cost, ngưỡng CRI) cho
-phù hợp với mô hình lốp đã thực tế hơn.
-
-**Ghi chú về `lat_accel_kin`:** đây vẫn chỉ là ước lượng kinematic
-(`v^2*tan(delta)/L`) từ lệnh lái đã áp dụng, không phải gia tốc tính trực
-tiếp từ lực lốp Fiala/friction ellipse. Giá trị nhỏ hơn nhiều ở đây phản ánh
-lệnh lái được chọn ôn hòa hơn, không phải một phép đo lực lốp độc lập.
+**Ghi chú về gia tốc ngang kinematic (129.978 m/s² ở cột C):** đây là một
+giới hạn đã biết của chỉ số `lat_accel_kin` (`v^2*tan(delta)/L`), xảy ra khi
+NMPC chọn `delta` lớn ở tốc độ cao (ví dụ `vx≈27.7 m/s`, `delta≈-0.40 rad`
+tại t=3.7s) — công thức kinematic giả định xe bám đường hoàn hảo (không
+trượt), nên phóng đại gia tốc thực tế khi góc lái lớn ở tốc độ cao. Gia tốc
+ngang **thực tế** của xe bị giới hạn bởi lực Fiala đã bão hòa theo friction
+ellipse (tối đa `max_Fyf`/`m`, xem mục 3b), không phải giá trị kinematic này.
+Đây không phải hồi quy mới — chỉ là việc phục hồi khả năng lái (mục 1b) khiến
+NMPC dùng `delta` lớn hơn, do đó bộc lộ rõ hơn hạn chế đã biết của chỉ số
+kinematic. Khuyến nghị: nếu cần báo cáo gia tốc ngang, tính trực tiếp từ
+`Fyf`, `Fyr` (gia tốc động lực học, `dvy/dt` nêu trong `continuous_dynamics`)
+thay vì dùng `lat_accel_kin`.
 
 Lệnh tái tạo:
 
@@ -208,37 +256,45 @@ print('max_abs_lat_accel_kin:', float(np.max(log['lat_accel_kin'])))
 "
 ```
 
-## 5. Phân tích độ nhạy `Cf`/`Cr`
+## 5. Phân tích độ nhạy `Cf`/`Cr` (đã chạy lại sau khi sửa lỗi mục 1b)
 
 Chạy lại kịch bản closed-loop mặc định (`max_steps=300`) với `Cf`, `Cr` quét
 theo hệ số 0.5×, 1×, 2×, 4× giá trị hiện tại, cộng thêm mốc so sánh
-`Cf=Cr=80000 N/rad` (giá trị của Rajamani cho cùng loại sedan):
+`Cf=Cr=80000 N/rad` (giá trị của Rajamani cho cùng loại sedan), **trên mô
+hình đã sửa lỗi friction ellipse**:
 
 | factor | Cf (N/rad) | Cr (N/rad) | min_dist (m) | CRI trung bình | NMPC | PP_FALLBACK | NO_TRACK | steps |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 0.5 | 9500 | 16500 | 29.735 | 0.1819 | 35 | 1 | 120 | 156 |
-| 1.0 (hiện tại) | 19000 | 33000 | 29.735 | 0.1819 | 35 | 1 | 120 | 156 |
-| 2.0 | 38000 | 66000 | 29.735 | 0.1818 | 35 | 1 | 120 | 156 |
-| 4.0 | 76000 | 132000 | 29.735 | 0.1815 | 35 | 1 | 120 | 156 |
-| — (Rajamani) | 80000 | 80000 | 29.735 | 0.1815 | 35 | 1 | 120 | 156 |
+| 0.5 | 9500 | 16500 | 11.655 | 0.1830 | 22 | 25 | 109 | 156 |
+| 1.0 (hiện tại) | 19000 | 33000 | 6.339 | 0.1990 | 29 | 23 | 104 | 156 |
+| 2.0 | 38000 | 66000 | 2.653 | 0.2213 | 43 | 9 | 104 | 156 |
+| 4.0 | 76000 | 132000 | 9.969 | 0.1525 | 30 | 2 | 124 | 156 |
+| — (Rajamani) | 80000 | 80000 | 6.623 | 0.1893 | 33 | 8 | 115 | 156 |
 
-**Nhận xét:** trong kịch bản đã chạy, các chỉ tiêu đầu ra (khoảng cách nhỏ
-nhất, phân bố mode, CRI trung bình) **gần như không đổi** trên toàn dải quét
-8× (0.5×–4×) và ở mốc Rajamani. Điều này không có nghĩa `Cf`/`Cr` không quan
-trọng nói chung — nó cho thấy: (a) trong kịch bản/chân trời điều khiển đã
-chạy, phần lớn bước thời gian là `NO_TRACK` (120/156, không có lực lốp nào
-ảnh hưởng tới quyết định vì không có track), (b) số bước có điều khiển chủ
-động (NMPC/PP) tương đối ít và có thể không đi vào vùng góc trượt đủ lớn để
-`Cf`/`Cr` tạo khác biệt rõ rệt trong friction ellipse hiện tại.
+**Nhận xét (đã thay đổi so với kết quả sweep trước khi sửa lỗi mục 1b):**
+sau khi sửa lỗi friction ellipse, kết quả **nhạy cảm rõ rệt** với `Cf`/`Cr`
+— `min_dist` dao động từ 2.65 m (factor 2.0) đến 11.66 m (factor 0.5), và
+phân bố mode (NMPC/PP_FALLBACK) cũng thay đổi đáng kể theo từng mức. Đây là
+hành vi hợp lý hơn nhiều so với sweep trước đó (gần như phẳng tuyệt đối),
+vốn là dấu hiệu gián tiếp của chính lỗi đã sửa (khi `Cf`/`Cr` không còn ảnh
+hưởng nhiều vì cầu trước đã mất khả năng lái do lỗi, không phải vì hệ thống
+thực sự không nhạy cảm với tham số này).
+
+Biến thiên **không đơn điệu** theo `factor` (không phải "Cf/Cr càng lớn thì
+càng tốt" một cách tuyến tính) — đây là hệ quả tự nhiên của một hệ vòng kín
+phi tuyến có chuyển mode rời rạc (NMPC/PP/hysteresis/mất track), không phải
+dấu hiệu lỗi. Giá trị `Cf`/`Cr` hiện tại (factor 1.0) cho kết quả gần tương
+đương mốc Rajamani (6.34 m so với 6.62 m) — một điểm dữ liệu khác hỗ trợ (dù
+không chứng minh) rằng độ lớn hiện tại không quá bất hợp lý so với tài liệu
+tham chiếu, trong kịch bản cụ thể này.
 
 **Kết luận cho mục đích "chứng minh tính legit":** phân tích độ nhạy này
 **không thay thế** việc cần một nguồn đo/hiệu chuẩn thực tế cho `Cf`, `Cr`.
-Nó chỉ cho biết: với kịch bản cụ thể đã kiểm tra, kết quả không nhạy cảm bất
-thường với độ lớn `Cf`/`Cr` trong khoảng đã quét — nên nếu phải dùng giá trị
-giả định, rủi ro sai lệch định lượng từ riêng `Cf`/`Cr` (ở kịch bản này) có
-vẻ thấp hơn rủi ro từ friction ellipse/tải động (xem mục 4). Cần lặp lại
-sweep này trên nhiều kịch bản khác (đặc biệt kịch bản có góc trượt lớn hơn)
-trước khi khái quát hóa kết luận.
+Với mô hình đã sửa lỗi, kết quả hiện **nhạy cảm đáng kể** với `Cf`/`Cr` (khác
+với kết luận "ít nhạy cảm" rút ra từ bản có lỗi) — nghĩa là việc chưa có
+nguồn đo thực tế cho `Cf`/`Cr` là một rủi ro định lượng thực sự, cần ưu tiên
+xử lý trước khi dùng kết quả closed-loop cho báo cáo. Cần lặp lại sweep này
+trên nhiều kịch bản khác, nhiều seed, trước khi khái quát hóa kết luận.
 
 Script tái tạo: `_sensitivity_sweep.py` (xem nội dung bên dưới, không commit
 kèm theo file kết quả này vì chỉ là script dùng một lần):
@@ -258,32 +314,55 @@ def make_patched(cf, cr):
         self.Cr = cr
     return patched
 
+rows = []
 for factor in [0.5, 1.0, 2.0, 4.0]:
     cf, cr = base_Cf * factor, base_Cr * factor
     VehicleParams.__init__ = make_patched(cf, cr)
     log = run_simulation(SimConfig(max_steps=300))
     VehicleParams.__init__ = orig_init
-    print(factor, cf, cr, np.min(log['distance']), np.mean(log['cri']), log['counts'])
+    rows.append((factor, cf, cr, np.min(log['distance']), np.mean(log['cri']), log['counts']))
+
+VehicleParams.__init__ = make_patched(80000.0, 80000.0)  # Rajamani
+log_raj = run_simulation(SimConfig(max_steps=300))
+VehicleParams.__init__ = orig_init
+for r in rows:
+    print(*r)
+print('Rajamani:', np.min(log_raj['distance']), np.mean(log_raj['cri']), log_raj['counts'])
 ```
 
 ## 6. Việc đã hoàn thành ở vòng rà soát này
 
 - Friction ellipse kết hợp lực dọc-ngang theo cầu (`_max_lateral_friction`).
 - Tải pháp tuyến động với chuyển tải dọc theo `h` (`normal_loads`).
-- Phân tích độ nhạy `Cf`/`Cr` trên kịch bản closed-loop mặc định (mục 5).
-- 2 test mới xác nhận hành vi chuyển tải và friction ellipse (mục 2).
+- **Phát hiện và sửa lỗi self-consistency** giữa `_longitudinal_force_split`
+  (trước đây dùng tải tĩnh) và `_max_lateral_friction` (dùng tải động) — lỗi
+  này từng khiến cầu trước mất toàn bộ khả năng lái khi gia tốc gần `ax_max`
+  (xem mục 1b). Đã thêm test hồi quy
+  `test_front_axle_retains_lateral_capacity_at_max_acceleration`.
+- Chạy lại kết quả closed-loop (mục 4) và sweep `Cf`/`Cr` (mục 5) trên mô
+  hình đã sửa lỗi; kết luận cũ rút ra từ dữ liệu có lỗi (ví dụ "độ nhạy
+  `Cf`/`Cr` thấp") đã được thay thế bằng kết luận mới, chính xác hơn.
+- Tổng cộng 12 test tự động xác nhận hành vi chuyển tải, friction ellipse và
+  tính self-consistency của phân bổ lực dọc/ngang (mục 2).
 
 ## 7. Việc chưa làm / cần rà soát tiếp
 
 - `Cf`, `Cr` vẫn là giá trị giả định, **chưa có nguồn đo/hiệu chuẩn thực tế**
   (xem mục 13.8 của [RESEARCH_PLAN_CRI_SEDAN.md](./RESEARCH_PLAN_CRI_SEDAN.md)).
-  Sweep ở mục 5 chỉ cho thấy độ nhạy thấp trong một kịch bản cụ thể, không
-  phải bằng chứng tính hợp lệ của giá trị.
+  Sweep ở mục 5 (đã chạy lại sau khi sửa lỗi mục 1b) cho thấy **độ nhạy đáng
+  kể** với `Cf`/`Cr` — khác với kết luận "ít nhạy cảm" rút ra trước đây từ dữ
+  liệu có lỗi — nên đây là rủi ro định lượng thực sự cần ưu tiên xử lý (tìm
+  nguồn đo riêng hoặc mở rộng sweep sang nhiều kịch bản/seed khác) trước khi
+  trình bày `Cf`/`Cr` là tham số đã xác thực.
 - `h=0.55 m` (chiều cao trọng tâm) là giả định minh họa, chưa có nguồn riêng.
-- Phân bổ lực dọc giữa hai cầu (`_longitudinal_force_split`, theo tỉ lệ tải
-  tĩnh) là giả định đơn giản hóa, không phản ánh hệ dẫn động cụ thể (FWD/RWD/
-  AWD); cần rà soát nếu kịch bản có gia tốc dọc lớn và cần độ chính xác cao.
-- **Cần điều tra thay đổi hành vi closed-loop** nêu ở mục 4 (mất sự kiện tới
-  gần mục tiêu) trước khi dùng kết quả mô phỏng cho bất kỳ tuyên bố định
-  lượng nào trong báo cáo; có thể cần tinh chỉnh lại tham số điều khiển
-  (NMPC/PP/hysteresis) cho phù hợp với mô hình lốp thực tế hơn.
+- Phân bổ lực dọc giữa hai cầu (`_longitudinal_force_split`, nay theo tỉ lệ
+  tải **động**) vẫn là giả định đơn giản hóa, không phản ánh hệ dẫn động cụ
+  thể (FWD/RWD/AWD); cần rà soát nếu kịch bản có gia tốc dọc lớn và cần độ
+  chính xác cao hơn (ví dụ mô hình riêng cho xe RWD/FWD).
+- Chỉ số `lat_accel_kin` (gia tốc ngang kinematic log để debug) vẫn là ước
+  lượng không có giới hạn vật lý (`v^2*tan(delta)/L`), có thể cho giá trị rất
+  lớn và gây hiểu nhầm (xem ghi chú mục 4); nên cân nhắc thay bằng gia tốc
+  tính trực tiếp từ `Fyf`, `Fyr` nếu dùng chỉ số này cho báo cáo.
+- Sweep `Cf`/`Cr` và kết quả closed-loop (mục 4, 5) mới chạy trên **một**
+  kịch bản (`lateral_zigzag`, seed mặc định); cần lặp lại trên nhiều kịch
+  bản/seed khác trước khi coi là đại diện chung.
