@@ -62,6 +62,20 @@ def test_fiala_zero_slip_produces_zero_force():
     assert model.tire_forces(10.0, 0.0, 0.0, 0.0) == (0.0, 0.0)
 
 
+def test_fiala_stationary_vehicle_has_no_steering_force():
+    model = DynamicBicycleModel()
+    assert model.tire_forces(0.0, 0.0, 0.0, 0.3) == (0.0, 0.0)
+
+
+def test_fiala_force_tends_to_zero_near_standstill():
+    model = DynamicBicycleModel()
+    low_speed_force, _ = model.tire_forces(1e-4, 0.0, 0.0, 0.3)
+    higher_low_speed_force, _ = model.tire_forces(1e-2, 0.0, 0.0, 0.3)
+
+    assert abs(low_speed_force) < 10.0
+    assert abs(low_speed_force) < abs(higher_low_speed_force)
+
+
 def test_fiala_matches_cornering_stiffness_at_small_slip():
     model = DynamicBicycleModel()
     alpha = 1e-6

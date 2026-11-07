@@ -39,6 +39,7 @@ class VehicleParams:
         self.Cr = 80000.0     # Độ cứng góc trượt cả cầu sau (N/rad) - Rajamani 2012
         self.mu = 0.9         # Hệ số ma sát lốp-mặt đường (giả định minh họa, xem Taylor 2015)
         self.g = 9.81         # Gia tốc trọng trường (m/s^2)
+        self.v_epsilon = 0.5  # Ngưỡng vận tốc để regularize góc trượt (m/s)
         self.Ts = 0.1         # Chu kỳ lấy mẫu (s)
 
         # Ràng buộc điều khiển
@@ -103,24 +104,38 @@ class DynamicBicycleModel:
         (mu*Fz sau khi đã trừ phần ma sát dùng cho lực dọc theo friction
         ellipse, xem `_max_lateral_friction`).
         """
+        return DynamicBicycleModel._fiala_lateral_force_from_slip_tangent(
+            -np.tan(alpha), cornering_stiffness, max_lateral_force
+        )
+
+    @staticmethod
+    def _fiala_lateral_force_from_slip_tangent(slip_tangent,
+                                               cornering_stiffness,
+                                               max_lateral_force):
+        """Tính lực Fiala từ tan(alpha) với quy ước slip ngược dấu lực."""
         if cornering_stiffness <= 0:
             raise ValueError("cornering stiffness must be positive")
         if max_lateral_force <= 0:
-            # Không còn ma sát khả dụng (ví dụ Fz=0 hoặc |Fx| đã dùng hết).
             return 0.0
 
-        tan_alpha = np.tan(alpha)
-        mu_fz = max_lateral_force
-        saturation_angle = 3.0 * mu_fz / cornering_stiffness
-        if abs(tan_alpha) >= saturation_angle:
-            return mu_fz * np.sign(tan_alpha)
+        saturation_slip = 3.0 * max_lateral_force / cornering_stiffness
+        if abs(slip_tangent) >= saturation_slip:
+            return -max_lateral_force * np.sign(slip_tangent)
 
         return (
-            cornering_stiffness * tan_alpha
-            - cornering_stiffness**2 / (3.0 * mu_fz)
-            * abs(tan_alpha) * tan_alpha
-            + cornering_stiffness**3 / (27.0 * mu_fz**2)
-            * tan_alpha**3
+            -cornering_stiffness * slip_tangent
+            + cornering_stiffness**2 / (3.0 * max_lateral_force)
+            * abs(slip_tangent) * slip_tangent
+            - cornering_stiffness**3 / (27.0 * max_lateral_force**2)
+            * slip_tangent**3
+        )
+
+    @staticmethod
+    def _regularized_speed(speed, epsilon):
+        magnitude = abs(speed)
+        smoothing = epsilon * 1e-3
+        return 0.5 * (
+            magnitude + epsilon + np.hypot(magnitude - epsilon, smoothing)
         )
 
     @staticmethod
@@ -184,12 +199,21 @@ class DynamicBicycleModel:
         """
         p = self.params
 
-        # Tránh chia cho 0
-        vx_safe = max(abs(vx), 0.5) * np.sign(max(vx, 0.5))
-
-        # Góc trượt
-        alpha_f = delta - np.arctan2(vy + p.lf * r, vx_safe)
-        alpha_r = -np.arctan2(vy - p.lr * r, vx_safe)
+        # Tính tan(alpha) trong hệ tọa độ từng cầu; regularization có giữ
+        # dấu và làm lực tiến về 0 khi mọi vận tốc tại cầu tiến về 0.
+        front_lateral_velocity = vy + p.lf * r
+        front_longitudinal_velocity = (
+            vx * np.cos(delta) + front_lateral_velocity * np.sin(delta)
+        )
+        front_tire_lateral_velocity = (
+            -vx * np.sin(delta) + front_lateral_velocity * np.cos(delta)
+        )
+        front_slip_tangent = front_tire_lateral_velocity / self._regularized_speed(
+            front_longitudinal_velocity, p.v_epsilon
+        )
+        rear_slip_tangent = (vy - p.lr * r) / self._regularized_speed(
+            vx, p.v_epsilon
+        )
 
         # Tải pháp tuyến động (có chuyển tải dọc) và friction ellipse.
         Fzf, Fzr = self.normal_loads(ax)
@@ -197,8 +221,12 @@ class DynamicBicycleModel:
         max_Fyf = self._max_lateral_friction(p.mu, Fzf, Fxf)
         max_Fyr = self._max_lateral_friction(p.mu, Fzr, Fxr)
 
-        Fyf = self._fiala_lateral_force(alpha_f, p.Cf, max_Fyf)
-        Fyr = self._fiala_lateral_force(alpha_r, p.Cr, max_Fyr)
+        Fyf = self._fiala_lateral_force_from_slip_tangent(
+            front_slip_tangent, p.Cf, max_Fyf
+        )
+        Fyr = self._fiala_lateral_force_from_slip_tangent(
+            rear_slip_tangent, p.Cr, max_Fyr
+        )
 
         return Fyf, Fyr
 

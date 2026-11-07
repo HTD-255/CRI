@@ -5,8 +5,9 @@ tuyến tính (`Fy = C*alpha`) bằng mô hình Fiala bão hòa trong
 [vehicle_model.py](./vehicle_model.py). Dùng làm tài liệu tham chiếu khi viết
 lại phần kết quả/methodology; không phải báo cáo cuối cùng.
 
-Ngày tạo: 2026-11-04. Cập nhật: 2026-11-06 (sửa lỗi phân bổ lực dọc, xem mục
-1b). Môi trường: Python 3.12.8, pytest 9.2.0, Windows.
+Ngày tạo: 2026-11-04. Cập nhật gần nhất: 2026-11-07 (regularization tốc độ
+thấp, chạy lại kết quả closed-loop và sweep `Cf`/`Cr`). Môi trường: Windows,
+Python 3.12.9 trong `.venv`, NumPy 2.5.4, pytest 9.2.0.
 
 ## 1. Thay đổi mã nguồn liên quan
 
@@ -25,11 +26,16 @@ Ngày tạo: 2026-11-04. Cập nhật: 2026-11-06 (sửa lỗi phân bổ lực 
   rà soát nếu cần độ chính xác cao hơn theo drivetrain thật.
 - `DynamicBicycleModel.tire_forces`: nhận thêm tham số `ax` (mặc định 0.0, nên
   tương thích ngược), dùng để tính tải pháp tuyến động và friction ellipse.
-- `VehicleParams`: thêm `mu=0.9` (hệ số ma sát), `g=9.81` và `h=0.55` (chiều
-  cao trọng tâm, giả định minh họa); `Cf`, `Cr` giữ nguyên giá trị cũ nhưng
-  được đánh dấu "giả định, cần rà soát" (xem
-  [RESEARCH_PLAN_CRI_SEDAN.md](./RESEARCH_PLAN_CRI_SEDAN.md) mục 13.8 để biết
-  chi tiết nguồn tham số).
+- `VehicleParams`: `Cf=Cr=80000 N/rad` là độ cứng góc trượt **cả cầu** được
+  công bố trong bộ sedan tham chiếu của Rajamani (2012, ch. 3); đây không phải
+  giá trị tự đặt. Giới hạn là chưa có dữ liệu hiệu chuẩn để khẳng định bộ
+  tham số tham chiếu mô tả chính xác một xe vật lý cụ thể. `mu=0.9` là giá trị
+  mô phỏng được đối chiếu khoảng kiểm định trong Taylor (2015), không phải đo
+  cho một cặp lốp-mặt đường cụ thể; `h=0.55 m` vẫn là giả định minh họa.
+- `VehicleParams.v_epsilon=0.5 m/s` và
+  `DynamicBicycleModel._regularized_speed`: regularize mẫu số vận tốc bằng một
+  smooth floor để tránh kỳ dị ở tốc độ thấp mà không làm đổi đáng kể góc
+  trượt ở tốc độ trên ngưỡng.
 
 ## 1b. Lỗi đã phát hiện và sửa: cầu trước mất toàn bộ khả năng lái khi tăng tốc gắt
 
@@ -39,8 +45,8 @@ lực dọc tổng theo tỉ lệ **tải pháp tuyến tĩnh**, trong khi `_max
 chuyển tải). Khi tăng tốc gắt (`ax` gần `ax_max=8 m/s^2`), chuyển tải làm
 giảm tải trọng cầu trước (`Fzf` động giảm), nhưng lực dọc yêu cầu tại cầu
 trước vẫn được tính theo tỉ lệ tải **tĩnh** (lớn hơn) — dẫn tới lực dọc yêu
-cầu tại cầu trước (vd. 6552 N) **vượt quá** giới hạn ma sát động của chính
-cầu đó (`mu*Fzf` động, vd. 4736 N). Phần âm bên trong friction ellipse bị
+cầu trước (7418.9 N tại `ax=8 m/s^2`) **vượt quá** giới hạn ma sát động
+của chính cầu đó (`mu*Fzf` động = 5863.4 N). Phần âm bên trong friction ellipse bị
 chặn ở 0, khiến mô hình kết luận sai rằng **cầu trước mất 100% khả năng lái**
 mỗi khi tăng tốc tối đa — dù tổng lực dọc toàn xe vẫn hoàn toàn khả thi nếu
 phân bổ hợp lý hơn (cầu sau có nhiều tải hơn khi tăng tốc, nên có thể gánh
@@ -62,48 +68,84 @@ giữa hai hàm.
 
 Ngân sách lực ngang khả dụng theo `ax` sau khi sửa (cầu trước):
 
-| `ax` (m/s²) | Fzf động (N) | Fxf yêu cầu (N) | Lực ngang khả dụng cầu trước (N) | Trước khi sửa |
+| `ax` (m/s²) | Fzf động (N) | Fxf hiện tại (N) | Lực ngang khả dụng hiện tại (N) | Chia Fx theo Fz tĩnh (N) |
 |---:|---:|---:|---:|---:|
-| 0 | 8034.4 | 0.0 | 7231.0 | 7231.0 (không đổi) |
-| +3 | 6994.9 | 2139.1 | 5920.8 | thấp hơn đáng kể (chia theo tải tĩnh, ước lượng ~5796) |
-| +8 (ax_max) | 5262.4 | 4291.4 | **2003.6** | **0.0** (lỗi: mất hoàn toàn khả năng lái) |
-| -5 (phanh) | 9766.9 | -4978.0 | 7244.8 | gần tương tự (ít bị ảnh hưởng vì phanh ít đổi) |
+| 0 | 9097.5 | 0.0 | 8187.7 | 8187.7 |
+| +3 | 8129.0 | 2485.9 | 6880.8 | 6766.5 |
+| +8 (ax_max) | 6514.9 | 5312.9 | **2480.5** | **0.0** (lỗi phân bổ cũ) |
+| -5 (phanh) | 10711.5 | -5459.5 | 7945.5 | 8452.0 |
 
 Đã thêm test hồi quy `test_front_axle_retains_lateral_capacity_at_max_acceleration`
 để đảm bảo cầu trước luôn giữ được lực ngang khả dụng > 0 ở `ax=ax_max`.
+
+## 1c. Regularization góc trượt ở tốc độ thấp
+
+Trước cập nhật 2026-11-07, mô hình đặt sàn cho `vx` nhưng vẫn dùng góc lái
+để tạo slip angle ở `vx=0`; xe đứng yên với `delta != 0` vì vậy có thể nhận
+lực lốp giả. Hiện mô hình tính các thành phần vận tốc trong hệ tọa độ bánh
+trước/sau, sau đó dùng mẫu số vận tốc được làm trơn:
+
+```text
+v_reg = 0.5 * (abs(v) + epsilon
+               + hypot(abs(v) - epsilon, epsilon * 1e-3))
+epsilon = 0.5 m/s
+```
+
+Đây là smooth approximation của `max(abs(v), epsilon)`: mẫu số luôn dương,
+không kỳ dị khi đổi chiều, và hầu như không làm đổi slip ở tốc độ lớn hơn
+ngưỡng. Fiala vẫn là mô hình phi tuyến theo `tan(alpha)`; friction ellipse
+vẫn giới hạn lực ngang còn lại sau lực dọc. Khi `vx=vy=r=0`, lực ngang bằng
+0 với mọi góc lái; khi xe còn vận tốc ngang hoặc yaw rate khác 0, lực ngang
+có thể vẫn có ý nghĩa vật lý.
+
+Giá trị kiểm tra với `delta=0.3 rad`, `vy=r=0`:
+
+| `vx` (m/s) | `Fyf` (N) |
+|---:|---:|
+| 0 | 0.0 |
+| 0.0001 | 4.727 |
+| 0.01 | 463.789 |
+| 0.5 | 8187.279 (gần bão hòa) |
+| 1.0 | 8187.712 (bão hòa) |
+| 10.0 | 8187.712 (bão hòa) |
+
+Hai test hồi quy `test_fiala_stationary_vehicle_has_no_steering_force` và
+`test_fiala_force_tends_to_zero_near_standstill` kiểm tra lực bằng 0 tại trạng
+thái đứng yên và tiến về 0 khi tốc độ giảm. Ngưỡng `0.5 m/s` là regularization
+số học, chưa được nhận dạng từ dữ liệu lốp.
+
+Phạm vi: NMPC hiện tại dùng mô phỏng phi tuyến và sai phân hữu hạn trong
+projected-gradient solver. Các đạo hàm affine được nêu trong đề xuất Convex
+MPC và matrix-exponential discretization **chưa được triển khai**; nếu đổi
+solver, cần tính Jacobian nhất quán với regularizer này. Cũng chưa có luật
+Ackermann khi xe dừng; mô hình lực không sinh lực ngang chỉ vì đổi `delta`.
 
 ## 2. Kết quả kiểm thử tự động (pytest)
 
 Lệnh chạy:
 
 ```powershell
-python -m pytest test_simulation.py -v
+.\.venv\Scripts\python.exe -m pytest test_simulation.py -q
 ```
 
-Kết quả (11/11 PASSED):
+Kết quả hiện tại: **14/14 passed** (Python 3.12.9, NumPy 2.5.4, pytest 9.2.0).
+Tám test liên quan trực tiếp đến lốp kiểm tra Fiala tại slip bằng 0, giới hạn
+ma sát, độ cứng góc nhỏ, trạng thái đứng yên, hội tụ tốc độ thấp, chuyển tải
+phanh/tăng tốc, friction ellipse và khả năng còn lực ngang tại `ax_max`.
 
 ```
-test_simulation.py::test_target_synchronized_with_ego PASSED
-test_simulation.py::test_applied_commands_replay_ego_state PASSED
-test_simulation.py::test_commands_within_limits PASSED
-test_simulation.py::test_applied_matches_selected_controller PASSED
-test_simulation.py::test_finalize_rejects_non_finite PASSED
-test_simulation.py::test_finalize_floor_then_clip PASSED
-test_simulation.py::test_fiala_zero_slip_produces_zero_force PASSED
-test_simulation.py::test_fiala_matches_cornering_stiffness_at_small_slip PASSED
-test_simulation.py::test_fiala_force_is_odd_and_saturates_at_friction_limit PASSED
-test_simulation.py::test_braking_shifts_normal_load_to_front_axle PASSED
-test_simulation.py::test_friction_ellipse_reduces_lateral_capacity_under_hard_braking PASSED
-test_simulation.py::test_front_axle_retains_lateral_capacity_at_max_acceleration PASSED
-
-============================== 12 passed ==============================
+..............                                                           [100%]
+14 passed
 ```
 
-6 test cho mô hình lốp (Fiala + friction ellipse + tải pháp tuyến động):
+Tám test cho mô hình lốp (Fiala + regularization tốc độ thấp + friction
+ellipse + tải pháp tuyến động):
 
 | Test | Mục tiêu kiểm tra |
 |---|---|
 | `test_fiala_zero_slip_produces_zero_force` | `alpha=0` phải cho lực ngang bằng 0 ở cả hai cầu. |
+| `test_fiala_stationary_vehicle_has_no_steering_force` | Với `vx=vy=r=0`, thay đổi `delta` không được tự sinh lực ngang. |
+| `test_fiala_force_tends_to_zero_near_standstill` | Lực ngang giảm về 0 khi `vx` tiến về 0. |
 | `test_fiala_matches_cornering_stiffness_at_small_slip` | Với `alpha` rất nhỏ (`1e-6 rad`), `Fy/alpha -> Cf` (đúng định nghĩa độ cứng góc trượt tuyến tính tại gốc). |
 | `test_fiala_force_is_odd_and_saturates_at_friction_limit` | Lực là hàm lẻ theo `alpha` (`Fy(-a) = -Fy(a)`) và bão hòa đúng bằng `mu*Fz` tĩnh khi `ax=0` và `alpha` vượt góc bão hòa. |
 | `test_braking_shifts_normal_load_to_front_axle` | Phanh (`ax<0`) tăng `Fzf`/giảm `Fzr`; tăng tốc (`ax>0`) ngược lại; tổng `Fzf+Fzr` không đổi. |
@@ -146,7 +188,7 @@ Ngoại lệ vẫn là `h=0.55 m` (giả định) và `mu=0.9` (tham chiếu Tay
 Lệnh tái tạo:
 
 ```powershell
-python -c "
+.\.venv\Scripts\python.exe -c "
 import numpy as np
 from vehicle_model import DynamicBicycleModel
 model = DynamicBicycleModel()
@@ -188,7 +230,7 @@ phần lớn khả năng vào cua khi tăng tốc gắt, nhưng **không** mất
 Lệnh tái tạo:
 
 ```powershell
-python -c "
+.\.venv\Scripts\python.exe -c "
 from vehicle_model import DynamicBicycleModel
 model = DynamicBicycleModel()
 for ax in [0.0, -6.0, 3.0]:
@@ -201,48 +243,36 @@ for ax in [0.0, -6.0, 3.0]:
 
 ## 4. Kết quả mô phỏng closed-loop (NMPC + Pure Pursuit + CRI)
 
-Chạy một episode mặc định (`SimConfig(max_steps=300)`, kịch bản
-`lateral_zigzag`), so sánh 4 trạng thái của mô hình lốp/tham số. Cột (D) là trạng thái **hiện
-tại** (bộ tham số Rajamani 2012 đầy đủ):
+Chạy lại một episode mặc định (`SimConfig(max_steps=300)`, kịch bản
+`lateral_zigzag`) trên code hiện tại, gồm regularization tốc độ thấp. Cột
+(D) là lần chạy mới. Các cột (A)-(C) là số liệu lưu từ các phiên bản trước;
+chúng chưa được chạy lại cùng regularizer mới nên chỉ giữ làm lịch sử, không
+phải phép so sánh có kiểm soát với (D).
 
 | Chỉ tiêu | (A) Fiala thuần, tải tĩnh | (B) + friction ellipse, **có lỗi mục 1b** | (C) + ellipse đã sửa, tham số cũ (`Cf=19000`, `Cr=33000`) | (D) + ellipse đã sửa, **tham số Rajamani** |
 |---|---:|---:|---:|---:|
 | Số bước mô phỏng | 156 / 300 (`target_end`) | 156 / 300 | 156 / 300 | 156 / 300 |
-| Phân bố mode | NMPC: 35, PP: 10, NO_TRACK: 111 | NMPC: 35, PP: 1, NO_TRACK: 120 | NMPC: 29, PP: 23, NO_TRACK: 104 | NMPC: 32, PP: 9, NO_TRACK: 115 |
-| Khoảng cách nhỏ nhất ego-target | 2.591 m | 29.735 m | 6.339 m | **6.266 m** |
-| Khoảng cách cuối cùng | 64.519 m | 133.114 m | 51.146 m | 95.468 m |
+| Phân bố mode | NMPC: 35, PP: 10, NO_TRACK: 111 | NMPC: 35, PP: 1, NO_TRACK: 120 | NMPC: 29, PP: 23, NO_TRACK: 104 | NMPC: 32, PP: 10, NO_TRACK: 114 |
+| Khoảng cách nhỏ nhất ego-target | 2.591 m | 29.735 m | 6.339 m | **5.955 m** |
+| Khoảng cách cuối cùng | 64.519 m | 133.114 m | 51.146 m | 96.909 m |
 | Thời điểm vào ngưỡng gần (< 4 m) | t = 6.0 s | không | không | không |
-| CRI trung bình / min / max | 0.172 / 0 / 0.824 | 0.1819 / 0 / 0.8596 | 0.199 / 0 / 0.811 | 0.1855 / 0 / 0.8774 |
-| `lat_accel_kin` lớn nhất | 83.124 m/s² | 0.184 m/s² | 129.978 m/s² | 174.315 m/s² |
+| CRI trung bình / min / max | 0.172 / 0 / 0.824 | 0.1819 / 0 / 0.8596 | 0.199 / 0 / 0.811 | 0.1868 / 0 / 0.8662 |
+| `lat_accel_kin` lớn nhất | 83.124 m/s² | 0.184 m/s² | 129.978 m/s² | 174.183 m/s² |
 
-Chuyển sang bộ Rajamani gần như không đổi `min_dist` (6.34 -> 6.27 m), tức
-kết luận định tính không phụ thuộc vào việc chọn bộ tham số cũ hay Rajamani.
+**Kết quả bản hiện tại:** mô phỏng kết thúc theo `target_end` sau 156 bước;
+`min_dist=5.955 m`, không vào ngưỡng gần `<4 m`. Đây là một episode của một
+kịch bản/seed, không đủ để khái quát hiệu năng chung. Chênh lệch với số liệu
+(D) cũ (`6.266 m`) xuất hiện sau cập nhật regularization tốc độ thấp.
 
-**Kết luận:** sau khi sửa lỗi phân bổ lực dọc (mục 1b), kết quả cải thiện rõ
-rệt so với (B) — khoảng cách nhỏ nhất giảm từ 29.7 m xuống 6.3 m, gần với
-mốc (A) hơn nhiều, trong khi vẫn giữ được mô hình vật lý thực tế hơn (A)
-(có friction ellipse + tải động). Kết quả (C) chưa đạt lại chính xác mốc
-(A) — điều này **hợp lý**, vì (A) vốn cho phép xe dùng lực ngang không giới
-hạn ngay cả khi tăng tốc tối đa (vật lý không thực tế), nên (A) luôn là
-"best case" lạc quan hơn so với mọi mô hình có ràng buộc ma sát thực tế.
-
-**Ghi chú về gia tốc ngang kinematic (129.978 m/s² ở cột C):** đây là một
-giới hạn đã biết của chỉ số `lat_accel_kin` (`v^2*tan(delta)/L`), xảy ra khi
-NMPC chọn `delta` lớn ở tốc độ cao (ví dụ `vx≈27.7 m/s`, `delta≈-0.40 rad`
-tại t=3.7s) — công thức kinematic giả định xe bám đường hoàn hảo (không
-trượt), nên phóng đại gia tốc thực tế khi góc lái lớn ở tốc độ cao. Gia tốc
-ngang **thực tế** của xe bị giới hạn bởi lực Fiala đã bão hòa theo friction
-ellipse (tối đa `max_Fyf`/`m`, xem mục 3b), không phải giá trị kinematic này.
-Đây không phải hồi quy mới — chỉ là việc phục hồi khả năng lái (mục 1b) khiến
-NMPC dùng `delta` lớn hơn, do đó bộc lộ rõ hơn hạn chế đã biết của chỉ số
-kinematic. Khuyến nghị: nếu cần báo cáo gia tốc ngang, tính trực tiếp từ
-`Fyf`, `Fyr` (gia tốc động lực học, `dvy/dt` nêu trong `continuous_dynamics`)
-thay vì dùng `lat_accel_kin`.
+`lat_accel_kin` cực đại `174.183 m/s^2` vẫn là ước lượng động học
+`v^2*tan(delta)/L`, không phải gia tốc ngang tính từ lực lốp. Không dùng số
+này làm bằng chứng rằng xe thực có thể đạt gia tốc đó; nếu báo cáo gia tốc
+ngang, cần tính từ lực Fiala và phương trình động lực học.
 
 Lệnh tái tạo:
 
 ```powershell
-python -c "
+.\.venv\Scripts\python.exe -c "
 import numpy as np
 from simulation import SimConfig, run_simulation
 log = run_simulation(SimConfig(max_steps=300))
@@ -257,25 +287,22 @@ print('max_abs_lat_accel_kin:', float(np.max(log['lat_accel_kin'])))
 "
 ```
 
-## 5. Phân tích độ nhạy `Cf`/`Cr` (quanh bộ Rajamani, sau khi sửa lỗi mục 1b)
+## 5. Phân tích độ nhạy `Cf`/`Cr` (code hiện tại)
 
 Chạy lại kịch bản closed-loop mặc định (`max_steps=300`), nhân `Cf` và `Cr`
 (cơ sở `80000 N/rad`, Rajamani 2012) với hệ số 0.5×, 1×, 2×, 4×:
 
 | factor | Cf = Cr (N/rad) | min_dist (m) | CRI trung bình | NMPC | PP_FALLBACK | NO_TRACK | steps |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 0.5 | 40000 | 4.855 | 0.2096 | 31 | 23 | 102 | 156 |
-| 1.0 (Rajamani, hiện tại) | 80000 | 6.266 | 0.1855 | 32 | 9 | 115 | 156 |
-| 2.0 | 160000 | 5.690 | 0.2039 | 35 | 13 | 108 | 156 |
-| 4.0 | 320000 | 3.473 | 0.2018 | 31 | 18 | 107 | 156 |
+| 0.5 | 40000 | 4.856 | 0.2084 | 31 | 23 | 102 | 156 |
+| 1.0 (Rajamani, hiện tại) | 80000 | 5.955 | 0.1868 | 32 | 10 | 114 | 156 |
+| 2.0 | 160000 | 5.330 | 0.2059 | 35 | 13 | 108 | 156 |
+| 4.0 | 320000 | 5.282 | 0.2006 | 32 | 16 | 108 | 156 |
 
-**Nhận xét:** `min_dist` nằm trong khoảng 3.5–6.3 m trên dải 8× của
-`Cf`/`Cr`, không đơn điệu (hệ vòng kín phi tuyến có chuyển mode rời rạc).
-Kết quả không bao giờ vào ngưỡng gần < 4 m ở các mức ≤ 2×, nên kết luận
-định tính ("tiến gần nhưng không đạt ngưỡng") ổn định với bộ tham số
-Rajamani. Với bộ cũ (`Cf=19000`, `Cr=33000`) `min_dist` = 6.339 m, gần như
-trùng bộ Rajamani (6.266 m). Cần lặp lại trên nhiều kịch bản/seed trước khi
-khái quát hóa.
+**Nhận xét:** `min_dist` nằm trong khoảng 4.856–5.955 m trên dải 8× của
+`Cf`/`Cr`, và không đơn điệu (hệ vòng kín phi tuyến có chuyển mode rời rạc).
+Ở cả bốn hệ số, episode này không vào ngưỡng gần `<4 m`. Đây là sweep một
+kịch bản/seed; cần thêm kịch bản và seed trước khi khái quát hóa.
 
 Script tái tạo (dùng một lần, không commit):
 
@@ -302,6 +329,8 @@ VehicleParams.__init__ = orig_init
 
 - Friction ellipse kết hợp lực dọc-ngang theo cầu (`_max_lateral_friction`).
 - Tải pháp tuyến động với chuyển tải dọc theo `h` (`normal_loads`).
+- Regularization tốc độ thấp cho slip angle, loại bỏ lực ngang giả do riêng
+  góc lái tại trạng thái `vx=vy=r=0` (mục 1c).
 - **Phát hiện và sửa lỗi self-consistency** giữa `_longitudinal_force_split`
   (trước đây dùng tải tĩnh) và `_max_lateral_friction` (dùng tải động) — lỗi
   này từng khiến cầu trước mất toàn bộ khả năng lái khi gia tốc gần `ax_max`
@@ -310,17 +339,17 @@ VehicleParams.__init__ = orig_init
 - Chạy lại kết quả closed-loop (mục 4) và sweep `Cf`/`Cr` (mục 5) trên mô
   hình đã sửa lỗi; kết luận cũ rút ra từ dữ liệu có lỗi (ví dụ "độ nhạy
   `Cf`/`Cr` thấp") đã được thay thế bằng kết luận mới, chính xác hơn.
-- Tổng cộng 12 test tự động xác nhận hành vi chuyển tải, friction ellipse và
-  tính self-consistency của phân bổ lực dọc/ngang (mục 2).
+- Tổng cộng 14 test tự động, trong đó 8 test về Fiala, regularization tốc độ
+  thấp, chuyển tải và friction ellipse (mục 2).
 
 ## 7. Việc chưa làm / cần rà soát tiếp
 
-- Một lưu ý về phạm vi nguồn: `m`, `Iz`, `lf`, `lr`, `Cf`, `Cr` nay lấy từ
-  một nguồn công bố (Rajamani 2012, ch. 3; `Cf`, `Cr` là độ cứng **cả cầu**).
-  Cần tự kiểm tra lại bảng số liệu gốc trong sách khi trích dẫn. Bộ tham số
-  MathWorks cũ (19000/33000 N/rad) đã bị bỏ vì không phải nguồn học thuật.
-  Sweep ở mục 5 vẫn nên được lặp lại trên nhiều kịch bản/seed.
-- `h=0.55 m` (chiều cao trọng tâm) là giả định minh họa, chưa có nguồn riêng.
+- `Cf=Cr=80000 N/rad` là độ cứng **cả cầu** được công bố trong bộ sedan
+  tham chiếu Rajamani (2012, ch. 3), không phải giá trị giả định/tự đặt. Giới
+  hạn còn lại là chưa hiệu chuẩn bộ sedan tham chiếu theo một xe cụ thể; khi
+  trích dẫn học thuật cần ghi đúng ấn bản và trang/bảng của nguồn.
+- `mu=0.9` là giả định mô phỏng có đối chiếu khoảng kiểm định Taylor (2015),
+  không phải phép đo mặt đường; `h=0.55 m` cũng là giả định minh họa.
 - Phân bổ lực dọc giữa hai cầu (`_longitudinal_force_split`, nay theo tỉ lệ
   tải **động**) vẫn là giả định đơn giản hóa, không phản ánh hệ dẫn động cụ
   thể (FWD/RWD/AWD); cần rà soát nếu kịch bản có gia tốc dọc lớn và cần độ
@@ -332,3 +361,6 @@ VehicleParams.__init__ = orig_init
 - Sweep `Cf`/`Cr` và kết quả closed-loop (mục 4, 5) mới chạy trên **một**
   kịch bản (`lateral_zigzag`, seed mặc định); cần lặp lại trên nhiều kịch
   bản/seed khác trước khi coi là đại diện chung.
+- `v_epsilon=0.5 m/s` được chọn để regularize số học, chưa được nhận dạng từ
+  dữ liệu lốp; cần sweep ngưỡng và xác nhận bằng dữ liệu nếu kết quả vùng tốc
+  độ thấp có ý nghĩa định lượng.
